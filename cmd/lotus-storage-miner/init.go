@@ -265,7 +265,7 @@ var initCmd = &cli.Command{
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
 		}
 		cachePath := filepath.Join(p, stores.FTCache.String())
-		if err := os.Remove(cachePath); err != nil {
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
 			return xerrors.Errorf("remove '%s': %w", cachePath, err)
 		}
 		if err := os.Symlink(mutualPath, cachePath); err != nil {
