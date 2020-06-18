@@ -29,6 +29,7 @@ import (
 	sectorstorage "github.com/filecoin-project/sector-storage"
 	"github.com/filecoin-project/sector-storage/sealtasks"
 	"github.com/filecoin-project/sector-storage/stores"
+	"github.com/mitchellh/go-homedir"
 )
 
 var log = logging.Logger("main")
@@ -63,6 +64,10 @@ func main() {
 				Name:  "enable-gpu-proving",
 				Usage: "enable use of GPU for mining operations",
 				Value: true,
+			},
+			&cli.StringFlag{
+				Name:  "p1p2cachepath",
+				Usage: "mutual cache path for p1 and p2 worker",
 			},
 		},
 
@@ -114,6 +119,10 @@ var runCmd = &cli.Command{
 
 		if cctx.String("address") == "" {
 			return xerrors.Errorf("--address flag is required")
+		}
+
+		if cctx.String("p1p2cachepath") == "" {
+			return xerrors.Errorf("--p1p2cachepath is required")
 		}
 
 		// Connect to storage-miner
@@ -243,6 +252,22 @@ var runCmd = &cli.Command{
 		localStore, err := stores.NewLocal(ctx, lr, nodeApi, []string{"http://" + cctx.String("address") + "/remote"})
 		if err != nil {
 			return err
+		}
+
+		mutualPath := cctx.String("p1p2cachepath")
+		if err := os.MkdirAll(mutualPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualPath, err)
+		}
+		p, err := homedir.Expand(repoPath)
+		if err != nil {
+			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
+		}
+		cachePath := filepath.Join(p, stores.FTCache.String())
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
+			return xerrors.Errorf("remove '%s': %w", cachePath, err)
+		}
+		if err := os.Symlink(mutualPath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualPath, err)
 		}
 
 		// Setup remote sector store

@@ -105,9 +105,17 @@ var initCmd = &cli.Command{
 			Usage: "set gas price for initialization messages in AttoFIL",
 			Value: "0",
 		},
+		&cli.StringFlag{
+			Name:  "p1p2cachepath",
+			Usage: "mutual cache path for p1 and p2 worker",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		log.Info("Initializing lotus storage miner")
+
+		if cctx.String("p1p2cachepath") == "" {
+			return xerrors.Errorf("--p1p2cachepath is required")
+		}
 
 		sectorSizeInt, err := units.RAMInBytes(cctx.String("sector-size"))
 		if err != nil {
@@ -246,6 +254,22 @@ var initCmd = &cli.Command{
 				log.Errorf("Failed to clean up failed storage repo: %s", err)
 			}
 			return xerrors.Errorf("Storage-miner init failed")
+		}
+
+		mutualPath := cctx.String("p1p2cachepath")
+		if err := os.MkdirAll(mutualPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualPath, err)
+		}
+		p, err := homedir.Expand(repoPath)
+		if err != nil {
+			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
+		}
+		cachePath := filepath.Join(p, stores.FTCache.String())
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
+			return xerrors.Errorf("remove '%s': %w", cachePath, err)
+		}
+		if err := os.Symlink(mutualPath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualPath, err)
 		}
 
 		// TODO: Point to setting storage price, maybe do it interactively or something
