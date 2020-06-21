@@ -106,25 +106,15 @@ var initCmd = &cli.Command{
 			Value: "0",
 		},
 		&cli.StringFlag{
-<<<<<<< HEAD
-			Name:  "p1p2cachepath",
-			Usage: "mutual cache path for p1 and p2 worker",
-=======
 			Name:  "mutualpath",
 			Usage: "mutual path for miner and workers",
->>>>>>> 244a87b2eb13a7ba189d2b7bd5eb76919048a700
 		},
 	},
 	Action: func(cctx *cli.Context) error {
 		log.Info("Initializing lotus storage miner")
 
-<<<<<<< HEAD
-		if cctx.String("p1p2cachepath") == "" {
-			return xerrors.Errorf("--p1p2cachepath is required")
-=======
 		if cctx.String("mutualpath") == "" {
 			return xerrors.Errorf("--mutualpath is required")
->>>>>>> 244a87b2eb13a7ba189d2b7bd5eb76919048a700
 		}
 
 		sectorSizeInt, err := units.RAMInBytes(cctx.String("sector-size"))
@@ -266,25 +256,10 @@ var initCmd = &cli.Command{
 			return xerrors.Errorf("Storage-miner init failed")
 		}
 
-<<<<<<< HEAD
-		mutualPath := cctx.String("p1p2cachepath")
-		if err := os.MkdirAll(mutualPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualPath, err)
-		}
-=======
->>>>>>> 244a87b2eb13a7ba189d2b7bd5eb76919048a700
 		p, err := homedir.Expand(repoPath)
 		if err != nil {
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
 		}
-<<<<<<< HEAD
-		cachePath := filepath.Join(p, stores.FTCache.String())
-		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
-			return xerrors.Errorf("remove '%s': %w", cachePath, err)
-		}
-		if err := os.Symlink(mutualPath, cachePath); err != nil {
-			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualPath, err)
-=======
 
 		mutualUnsealPath := cctx.String("mutualpath") + "/" + stores.FTUnsealed.String()
 		if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil && !os.IsExist(err) {
@@ -320,7 +295,6 @@ var initCmd = &cli.Command{
 		}
 		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
 			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
->>>>>>> 244a87b2eb13a7ba189d2b7bd5eb76919048a700
 		}
 
 		// TODO: Point to setting storage price, maybe do it interactively or something
@@ -535,7 +509,7 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api lapi.FullNode,
 				}
 
 				if cerr != nil {
-					return xerrors.Errorf("failed to configure storage miner: %w", cerr)
+					return xerrors.Errorf("failed to configure storage miner: %w", err)
 				}
 			}
 
