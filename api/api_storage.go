@@ -26,6 +26,7 @@ type StorageMiner interface {
 
 	// Temp api for testing
 	PledgeSector(context.Context) error
+	MutualSector(context.Context, string, string) error
 
 	// Get the status of a given sector by ID
 	SectorsStatus(context.Context, abi.SectorNumber) (SectorInfo, error)

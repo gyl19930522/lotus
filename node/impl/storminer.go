@@ -84,6 +84,10 @@ func (sm *StorageMinerAPI) PledgeSector(ctx context.Context) error {
 	return sm.Miner.PledgeSector()
 }
 
+func (sm *StorageMinerAPI) MutualSector(ctx context.Context, mutualPath string, storageRepoPath string) error {
+	return sm.Miner.MutualSector(mutualPath, storageRepoPath)
+}
+
 func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber) (api.SectorInfo, error) {
 	info, err := sm.Miner.GetSectorInfo(sid)
 	if err != nil {

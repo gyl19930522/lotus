@@ -197,7 +197,8 @@ type StorageMinerStruct struct {
 		MarketListIncompleteDeals func(ctx context.Context) ([]storagemarket.MinerDeal, error)   `perm:"read"`
 		MarketSetPrice            func(context.Context, types.BigInt) error                      `perm:"admin"`
 
-		PledgeSector func(context.Context) error `perm:"write"`
+		PledgeSector func(context.Context) error                 `perm:"write"`
+		MutualSector func(context.Context, string, string) error `perm:"write"`
 
 		SectorsStatus func(context.Context, abi.SectorNumber) (api.SectorInfo, error) `perm:"read"`
 		SectorsList   func(context.Context) ([]abi.SectorNumber, error)               `perm:"read"`
@@ -753,6 +754,10 @@ func (c *StorageMinerStruct) ActorSectorSize(ctx context.Context, addr address.A
 
 func (c *StorageMinerStruct) PledgeSector(ctx context.Context) error {
 	return c.Internal.PledgeSector(ctx)
+}
+
+func (c *StorageMinerStruct) MutualSector(ctx context.Context, mutualPath string, storageRepoPath string) error {
+	return c.Internal.MutualSector(ctx, mutualPath, storageRepoPath)
 }
 
 // Get the status of a given sector by ID
