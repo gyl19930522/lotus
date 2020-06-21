@@ -106,15 +106,15 @@ var initCmd = &cli.Command{
 			Value: "0",
 		},
 		&cli.StringFlag{
-			Name:  "p1p2cachepath",
-			Usage: "mutual cache path for p1 and p2 worker",
+			Name:  "mutualpath",
+			Usage: "mutual path for miner and workers",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
 		log.Info("Initializing lotus storage miner")
 
-		if cctx.String("p1p2cachepath") == "" {
-			return xerrors.Errorf("--p1p2cachepath is required")
+		if cctx.String("mutualpath") == "" {
+			return xerrors.Errorf("--mutualpath is required")
 		}
 
 		sectorSizeInt, err := units.RAMInBytes(cctx.String("sector-size"))
@@ -256,20 +256,45 @@ var initCmd = &cli.Command{
 			return xerrors.Errorf("Storage-miner init failed")
 		}
 
-		mutualPath := cctx.String("p1p2cachepath")
-		if err := os.MkdirAll(mutualPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualPath, err)
-		}
 		p, err := homedir.Expand(repoPath)
 		if err != nil {
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
 		}
+
+		mutualUnsealPath := cctx.String("mutualpath") + "/" + stores.FTUnsealed.String()
+		if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualUnsealPath, err)
+		}
+		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
+		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", unsealPath, err)
+		}
+		if err := os.Symlink(mutualUnsealPath, unsealPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", unsealPath, mutualUnsealPath, err)
+		}
+
+		mutualSealedPath := cctx.String("mutualpath") + "/" + stores.FTSealed.String()
+		if err := os.MkdirAll(mutualSealedPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualSealedPath, err)
+		}
+		sealedPath := filepath.Join(p, stores.FTSealed.String())
+		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", sealedPath, err)
+		}
+		if err := os.Symlink(mutualSealedPath, sealedPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", sealedPath, mutualSealedPath, err)
+		}
+
+		mutualCachePath := cctx.String("mutualpath") + "/" + stores.FTCache.String()
+		if err := os.MkdirAll(mutualCachePath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualCachePath, err)
+		}
 		cachePath := filepath.Join(p, stores.FTCache.String())
-		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 			return xerrors.Errorf("remove '%s': %w", cachePath, err)
 		}
-		if err := os.Symlink(mutualPath, cachePath); err != nil {
-			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualPath, err)
+		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
 		}
 
 		// TODO: Point to setting storage price, maybe do it interactively or something
@@ -484,7 +509,7 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api lapi.FullNode,
 				}
 
 				if cerr != nil {
-					return xerrors.Errorf("failed to configure storage miner: %w", cerr)
+					return xerrors.Errorf("failed to configure storage miner: %w", err)
 				}
 			}
 
