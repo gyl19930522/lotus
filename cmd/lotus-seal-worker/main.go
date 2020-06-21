@@ -3,14 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -69,8 +66,8 @@ func main() {
 				Value: true,
 			},
 			&cli.StringFlag{
-				Name:  "p1p2cachepath",
-				Usage: "mutual cache path for p1 and p2 worker",
+				Name:  "mutualpath",
+				Usage: "mutual path for miner and workers",
 			},
 		},
 
@@ -124,24 +121,16 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("--address flag is required")
 		}
 
-		if cctx.String("p1p2cachepath") == "" {
-			return xerrors.Errorf("--p1p2cachepath is required")
+		if cctx.String("mutualpath") == "" {
+			return xerrors.Errorf("--mutualpath is required")
 		}
 
 		// Connect to storage-miner
-		var nodeApi api.StorageMiner
-		var closer func()
-		var err error
-		for {
-			nodeApi, closer, err = lcli.GetStorageMinerAPI(cctx)
-			if err == nil {
-				break
-			}
-			fmt.Printf("\r\x1b[0KConnecting to miner API... (%s)", err)
-			time.Sleep(time.Second)
-			continue
-		}
 
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return xerrors.Errorf("getting miner api: %w", err)
+		}
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
 		ctx, cancel := context.WithCancel(ctx)
@@ -155,8 +144,6 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("lotus-storage-miner API version doesn't match: local: ", api.Version{APIVersion: build.APIVersion})
 		}
 		log.Infof("Remote version %s", v)
-
-		watchMinerConn(ctx, cctx, nodeApi)
 
 		// Check params
 
@@ -267,20 +254,45 @@ var runCmd = &cli.Command{
 			return err
 		}
 
-		mutualPath := cctx.String("p1p2cachepath")
-		if err := os.MkdirAll(mutualPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualPath, err)
-		}
 		p, err := homedir.Expand(repoPath)
 		if err != nil {
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
 		}
+
+		mutualUnsealPath := cctx.String("mutualpath") + "/" + stores.FTUnsealed.String()
+		if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualUnsealPath, err)
+		}
+		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
+		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", unsealPath, err)
+		}
+		if err := os.Symlink(mutualUnsealPath, unsealPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", unsealPath, mutualUnsealPath, err)
+		}
+
+		mutualSealedPath := cctx.String("mutualpath") + "/" + stores.FTSealed.String()
+		if err := os.MkdirAll(mutualSealedPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualSealedPath, err)
+		}
+		sealedPath := filepath.Join(p, stores.FTSealed.String())
+		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", sealedPath, err)
+		}
+		if err := os.Symlink(mutualSealedPath, sealedPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", sealedPath, mutualSealedPath, err)
+		}
+
+		mutualCachePath := cctx.String("mutualpath") + "/" + stores.FTCache.String()
+		if err := os.MkdirAll(mutualCachePath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualCachePath, err)
+		}
 		cachePath := filepath.Join(p, stores.FTCache.String())
-		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err)  {
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 			return xerrors.Errorf("remove '%s': %w", cachePath, err)
 		}
-		if err := os.Symlink(mutualPath, cachePath); err != nil {
-			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualPath, err)
+		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
 		}
 
 		// Setup remote sector store
@@ -354,43 +366,4 @@ var runCmd = &cli.Command{
 
 		return srv.Serve(nl)
 	},
-}
-
-func watchMinerConn(ctx context.Context, cctx *cli.Context, nodeApi api.StorageMiner) {
-	go func() {
-		closing, err := nodeApi.Closing(ctx)
-		if err != nil {
-			log.Errorf("failed to get remote closing channel: %+v", err)
-		}
-
-		select {
-		case <-closing:
-		case <-ctx.Done():
-		}
-
-		if ctx.Err() != nil {
-			return // graceful shutdown
-		}
-
-		log.Warnf("Connection with miner node lost, restarting")
-
-		exe, err := os.Executable()
-		if err != nil {
-			log.Errorf("getting executable for auto-restart: %+v", err)
-		}
-
-		log.Sync()
-
-		// TODO: there are probably cleaner/more graceful ways to restart,
-		//  but this is good enough for now (FSM can recover from the mess this creates)
-		if err := syscall.Exec(exe, []string{exe, "run",
-			fmt.Sprintf("--address=%s", cctx.String("address")),
-			fmt.Sprintf("--no-local-storage=%t", cctx.Bool("no-local-storage")),
-			fmt.Sprintf("--precommit1=%t", cctx.Bool("precommit1")),
-			fmt.Sprintf("--precommit2=%t", cctx.Bool("precommit2")),
-			fmt.Sprintf("--commit=%t", cctx.Bool("commit")),
-		}, os.Environ()); err != nil {
-			fmt.Println(err)
-		}
-	}()
 }
