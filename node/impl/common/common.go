@@ -47,7 +47,7 @@ func (a *CommonAPI) AuthVerify(ctx context.Context, token string) ([]auth.Permis
 	}
 	*/
 
-	var p := jwtPayload{
+	var p = jwtPayload{
 		Allow: apistruct.AllPermissions,
 		//Allow: perms, // TODO: consider checking validity
 	}
