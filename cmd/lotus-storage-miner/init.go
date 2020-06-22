@@ -256,6 +256,18 @@ var initCmd = &cli.Command{
 			return xerrors.Errorf("Storage-miner init failed")
 		}
 
+		pathConfigJson, err := homedir.Expand("~/pathConfig.json")
+		if err != nil {
+			xerrors.Errorf("could not expand home dir (%s): %w", "~/pathConfig.json", err)
+		}
+		if err := os.Remove(pathConfigJson); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", pathConfigJson, err)
+		}
+
+		if err := os.Remove(cctx.String("mutualpath")); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", cctx.String("mutualpath"), err)
+		}
+
 		p, err := homedir.Expand(repoPath)
 		if err != nil {
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
