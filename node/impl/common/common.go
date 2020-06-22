@@ -14,7 +14,7 @@ import (
 	swarm "github.com/libp2p/go-libp2p-swarm"
 	ma "github.com/multiformats/go-multiaddr"
 	"go.uber.org/fx"
-	"golang.org/x/xerrors"
+//	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-jsonrpc/auth"
 
