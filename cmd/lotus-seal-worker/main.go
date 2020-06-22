@@ -260,9 +260,6 @@ var runCmd = &cli.Command{
 		}
 
 		mutualUnsealPath := cctx.String("mutualpath") + "/" + stores.FTUnsealed.String()
-		if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualUnsealPath, err)
-		}
 		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
 		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
 			return xerrors.Errorf("remove '%s': %w", unsealPath, err)
@@ -272,9 +269,6 @@ var runCmd = &cli.Command{
 		}
 
 		mutualSealedPath := cctx.String("mutualpath") + "/" + stores.FTSealed.String()
-		if err := os.MkdirAll(mutualSealedPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualSealedPath, err)
-		}
 		sealedPath := filepath.Join(p, stores.FTSealed.String())
 		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
 			return xerrors.Errorf("remove '%s': %w", sealedPath, err)
@@ -284,9 +278,6 @@ var runCmd = &cli.Command{
 		}
 
 		mutualCachePath := cctx.String("mutualpath") + "/" + stores.FTCache.String()
-		if err := os.MkdirAll(mutualCachePath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualCachePath, err)
-		}
 		cachePath := filepath.Join(p, stores.FTCache.String())
 		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
 			return xerrors.Errorf("remove '%s': %w", cachePath, err)
