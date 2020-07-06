@@ -276,7 +276,7 @@ var sectorsUpdateCmd = &cli.Command{
 	},
 }
 
-var sectorMutualSectorCmd = &cli.Command{
+var sectorsMutualSectorCmd = &cli.Command{
 	Name:  "mutualSector",
 	Usage: "create mutual unseal sector",
 	Flags: []cli.Flag{
