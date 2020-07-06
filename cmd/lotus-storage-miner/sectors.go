@@ -28,6 +28,7 @@ var sectorsCmd = &cli.Command{
 		sectorsUpdateCmd,
 		sectorsPledgeCmd,
 		sectorsRemoveCmd,
+		sectorsMutualSectorCmd,
 	},
 }
 
@@ -272,6 +273,44 @@ var sectorsUpdateCmd = &cli.Command{
 		}
 
 		return nodeApi.SectorsUpdate(ctx, abi.SectorNumber(id), api.SectorState(cctx.Args().Get(1)))
+	},
+}
+
+var sectorMutualSectorCmd = &cli.Command{
+	Name:  "mutualSector",
+	Usage: "create mutual unseal sector",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:    FlagStorageRepo,
+			EnvVars: []string{"LOTUS_STORAGE_PATH"},
+		},
+		&cli.StringFlag{
+			Name:  "mutualpath",
+			Usage: "mutual path for miner and workers",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if cctx.String("mutualpath") == "" {
+			return xerrors.Errorf("--mutualpath is required")
+		}
+		if cctx.String(FlagStorageRepo) == "" {
+			return xerrors.Errorf("--" + FlagStorageRepo + " is required")
+		}
+
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := lcli.ReqContext(cctx)
+
+		mutualSectorPath := cctx.String("mutualpath")
+		if err := os.MkdirAll(mutualSectorPath, 0777); err != nil && !os.IsExist(err) {
+			return xerrors.Errorf("mkdir '%s': %w", mutualSectorPath, err)
+		}
+
+		storageReopPath := cctx.String(FlagStorageRepo)
+		return nodeApi.MutualSector(ctx, mutualSectorPath, storageReopPath)
 	},
 }
 
