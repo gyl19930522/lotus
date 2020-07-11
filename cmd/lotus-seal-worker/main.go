@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	sectorstorage "github.com/filecoin-project/sector-storage"
 	"github.com/filecoin-project/sector-storage/sealtasks"
 	"github.com/filecoin-project/sector-storage/stores"
+	"github.com/mitchellh/go-homedir"
 )
 
 var log = logging.Logger("main")
@@ -66,6 +68,14 @@ func main() {
 				Name:  "enable-gpu-proving",
 				Usage: "enable use of GPU for mining operations",
 				Value: true,
+			},
+			&cli.StringFlag{
+				Name:  "mutualpath",
+				Usage: "mutual path for miner and workers",
+			},
+			&cli.StringFlag{
+				Name:  "workerGroupsId",
+				Usage: "worker Groups Id",
 			},
 		},
 
@@ -117,6 +127,14 @@ var runCmd = &cli.Command{
 
 		if cctx.String("address") == "" {
 			return xerrors.Errorf("--address flag is required")
+		}
+
+		if cctx.String("mutualpath") == "" {
+			return xerrors.Errorf("--mutualpath is required")
+		}
+
+		if cctx.String("workerGroupsId") == "" {
+			return xerrors.Errorf("--workerGroupsId is required")
 		}
 
 		// Connect to storage-miner
@@ -258,6 +276,48 @@ var runCmd = &cli.Command{
 			return err
 		}
 
+		p, err := homedir.Expand(repoPath)
+		if err != nil {
+			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
+		}
+
+		workerGroupsId, err := strconv.Atoi(cctx.String("workerGroupsId"))
+		if err != nil {
+			return err
+		}
+		mutualPath := cctx.String("mutualpath")
+
+		if err := nodeApi.AddMutualPath(ctx, workerGroupsId, mutualPath); err != nil {
+			return err
+		}
+
+		mutualUnsealPath := mutualPath + "/" + stores.FTUnsealed.String()
+		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
+		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", unsealPath, err)
+		}
+		if err := os.Symlink(mutualUnsealPath, unsealPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", unsealPath, mutualUnsealPath, err)
+		}
+
+		mutualSealedPath := mutualPath + "/" + stores.FTSealed.String()
+		sealedPath := filepath.Join(p, stores.FTSealed.String())
+		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", sealedPath, err)
+		}
+		if err := os.Symlink(mutualSealedPath, sealedPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", sealedPath, mutualSealedPath, err)
+		}
+
+		mutualCachePath := mutualPath + "/" + stores.FTCache.String()
+		cachePath := filepath.Join(p, stores.FTCache.String())
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", cachePath, err)
+		}
+		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
+		}
+
 		// Setup remote sector store
 		spt, err := ffiwrapper.SealProofTypeFromSectorSize(ssize)
 		if err != nil {
@@ -277,7 +337,7 @@ var runCmd = &cli.Command{
 			LocalWorker: sectorstorage.NewLocalWorker(sectorstorage.WorkerConfig{
 				SealProof: spt,
 				TaskTypes: taskTypes,
-			}, remote, localStore, nodeApi),
+			}, remote, localStore, nodeApi, workerGroupsId, mutualPath),
 		}
 
 		mux := mux.NewRouter()

@@ -93,6 +93,10 @@ func (sm *StorageMinerAPI) PledgeSector(ctx context.Context) error {
 	return sm.Miner.PledgeSector()
 }
 
+func (sm *StorageMinerAPI) MutualSector(ctx context.Context, mutualPath string, storageRepoPath string) error {
+	return sm.Miner.MutualSector(mutualPath, storageRepoPath)
+}
+
 func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber) (api.SectorInfo, error) {
 	info, err := sm.Miner.GetSectorInfo(sid)
 	if err != nil {
@@ -194,6 +198,10 @@ func (sm *StorageMinerAPI) WorkerConnect(ctx context.Context, url string) error 
 	log.Infof("Connected to a remote worker at %s", url)
 
 	return sm.StorageMgr.AddWorker(ctx, w)
+}
+
+func (sm *StorageMinerAPI) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
+	return sm.StorageMgr.AddMutualPath(ctx, groupsId, mutualPath)
 }
 
 func (sm *StorageMinerAPI) MarketImportDealData(ctx context.Context, propCid cid.Cid, path string) error {
