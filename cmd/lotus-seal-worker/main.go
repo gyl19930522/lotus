@@ -7,7 +7,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+//	"syscall"
+//	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -69,6 +73,14 @@ func main() {
 				Name:  "mutualpath",
 				Usage: "mutual path for miner and workers",
 			},
+			&cli.StringFlag{
+				Name:  "workerGroupsId",
+				Usage: "worker Groups Id",
+			},
+			&cli.StringFlag{
+				Name:  "minerActualRepoPath",
+				Usage: "actual storagerepo of miner",
+			},
 		},
 
 		Commands: local,
@@ -123,6 +135,14 @@ var runCmd = &cli.Command{
 
 		if cctx.String("mutualpath") == "" {
 			return xerrors.Errorf("--mutualpath is required")
+		}
+
+		if cctx.String("workerGroupsId") == "" {
+			return xerrors.Errorf("--workerGroupsId is required")
+		}
+
+		if cctx.String("minerActualRepoPath") == "" {
+			return xerrors.Errorf("--minerActualRepoPath is required")
 		}
 
 		// Connect to storage-miner
@@ -259,9 +279,28 @@ var runCmd = &cli.Command{
 			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
 		}
 
-		mutualUnsealPath := cctx.String("mutualpath") + "/" + stores.FTUnsealed.String()
-		if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualUnsealPath, err)
+		workerGroupsId, err := strconv.Atoi(cctx.String("workerGroupsId"))
+		if err != nil {
+			return err
+		}
+
+		mutualPath := cctx.String("mutualpath")
+		if _, err := os.Stat(mutualPath); err != nil {
+			return err
+		}
+
+		if err := nodeApi.AddMutualPath(ctx, workerGroupsId, mutualPath); err != nil {
+			return err
+		}
+
+		mutualUnsealPath := mutualPath + "/" + stores.FTUnsealed.String()
+		if _, err := os.Stat(mutualUnsealPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil {
+				return err
+			}
 		}
 		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
 		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
@@ -271,9 +310,14 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("symlink '%s' to '%s': %w", unsealPath, mutualUnsealPath, err)
 		}
 
-		mutualSealedPath := cctx.String("mutualpath") + "/" + stores.FTSealed.String()
-		if err := os.MkdirAll(mutualSealedPath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualSealedPath, err)
+		mutualSealedPath := mutualPath + "/" + stores.FTSealed.String()
+		if _, err := os.Stat(mutualSealedPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualSealedPath, 0777); err != nil {
+				return err
+			}
 		}
 		sealedPath := filepath.Join(p, stores.FTSealed.String())
 		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
@@ -283,9 +327,14 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("symlink '%s' to '%s': %w", sealedPath, mutualSealedPath, err)
 		}
 
-		mutualCachePath := cctx.String("mutualpath") + "/" + stores.FTCache.String()
-		if err := os.MkdirAll(mutualCachePath, 0777); err != nil && !os.IsExist(err) {
-			return xerrors.Errorf("mkdir '%s': %w", mutualCachePath, err)
+		mutualCachePath := mutualPath + "/" + stores.FTCache.String()
+		if _, err := os.Stat(mutualCachePath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualCachePath, 0777); err != nil {
+				return err
+			}
 		}
 		cachePath := filepath.Join(p, stores.FTCache.String())
 		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
@@ -293,6 +342,25 @@ var runCmd = &cli.Command{
 		}
 		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
 			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
+		}
+
+		mutualSectorPath := filepath.Join(cctx.String("minerActualRepoPath"), "mutual-sector")
+		if _, err := os.Stat(mutualSectorPath); err == nil {
+			localPath, err := homedir.Expand("~/lotus_local_data")
+			if err != nil {
+				return err
+			}
+			localStagedPath := filepath.Join(localPath, "/mutual-sector")
+			if _, err := os.Stat(localStagedPath); err != nil {
+				if !os.IsNotExist(err) {
+					return xerrors.Errorf("stat mutual sector: %w", err)
+				}
+				cmd := exec.Command("cp", "-rf", mutualSectorPath, localStagedPath)
+				log.Infof("copping staged sector: cp -rf %s %s", mutualSectorPath, localStagedPath)
+				if err := cmd.Run(); err != nil {
+					return xerrors.Errorf("copy staged sector: %w", err)
+				}
+			}
 		}
 
 		// Setup remote sector store
@@ -314,7 +382,7 @@ var runCmd = &cli.Command{
 			LocalWorker: sectorstorage.NewLocalWorker(sectorstorage.WorkerConfig{
 				SealProof: spt,
 				TaskTypes: taskTypes,
-			}, remote, localStore, nodeApi),
+			}, remote, localStore, nodeApi, workerGroupsId, mutualPath, mutualSectorPath),
 		}
 
 		mux := mux.NewRouter()
