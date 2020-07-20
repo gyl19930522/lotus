@@ -8,9 +8,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"syscall"
-	"time"
+	"strconv"
+	//	"syscall"
+	//	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -32,6 +34,7 @@ import (
 	sectorstorage "github.com/filecoin-project/sector-storage"
 	"github.com/filecoin-project/sector-storage/sealtasks"
 	"github.com/filecoin-project/sector-storage/stores"
+	"github.com/mitchellh/go-homedir"
 )
 
 var log = logging.Logger("main")
@@ -73,6 +76,18 @@ func main() {
 				Name:  "enable-gpu-proving",
 				Usage: "enable use of GPU for mining operations",
 				Value: true,
+			},
+			&cli.StringFlag{
+				Name:  "mutualpath",
+				Usage: "mutual path for miner and workers",
+			},
+			&cli.StringFlag{
+				Name:  "workerGroupsId",
+				Usage: "worker Groups Id",
+			},
+			&cli.StringFlag{
+				Name:  "minerActualRepoPath",
+				Usage: "actual storagerepo of miner",
 			},
 		},
 
@@ -126,20 +141,24 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("--address flag is required")
 		}
 
-		// Connect to storage-miner
-		var nodeApi api.StorageMiner
-		var closer func()
-		var err error
-		for {
-			nodeApi, closer, err = lcli.GetStorageMinerAPI(cctx)
-			if err == nil {
-				break
-			}
-			fmt.Printf("\r\x1b[0KConnecting to miner API... (%s)", err)
-			time.Sleep(time.Second)
-			continue
+		if cctx.String("mutualpath") == "" {
+			return xerrors.Errorf("--mutualpath is required")
 		}
 
+		if cctx.String("workerGroupsId") == "" {
+			return xerrors.Errorf("--workerGroupsId is required")
+		}
+
+		if cctx.String("minerActualRepoPath") == "" {
+			return xerrors.Errorf("--minerActualRepoPath is required")
+		}
+
+		// Connect to storage-miner
+
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return xerrors.Errorf("getting miner api: %w", err)
+		}
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
 		ctx, cancel := context.WithCancel(ctx)
@@ -153,8 +172,6 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("lotus-miner API version doesn't match: local: ", api.Version{APIVersion: build.APIVersion})
 		}
 		log.Infof("Remote version %s", v)
-
-		watchMinerConn(ctx, cctx, nodeApi)
 
 		// Check params
 
@@ -265,6 +282,95 @@ var runCmd = &cli.Command{
 			return err
 		}
 
+		p, err := homedir.Expand(repoPath)
+		if err != nil {
+			xerrors.Errorf("could not expand home dir (%s): %w", repoPath, err)
+		}
+
+		workerGroupsId, err := strconv.Atoi(cctx.String("workerGroupsId"))
+		if err != nil {
+			return err
+		}
+
+		mutualPath := cctx.String("mutualpath")
+		if _, err := os.Stat(mutualPath); err != nil {
+			return err
+		}
+
+		if err := nodeApi.AddMutualPath(ctx, workerGroupsId, mutualPath); err != nil {
+			return err
+		}
+
+		mutualUnsealPath := mutualPath + "/" + stores.FTUnsealed.String()
+		if _, err := os.Stat(mutualUnsealPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualUnsealPath, 0777); err != nil {
+				return err
+			}
+		}
+		unsealPath := filepath.Join(p, stores.FTUnsealed.String())
+		if err := os.Remove(unsealPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", unsealPath, err)
+		}
+		if err := os.Symlink(mutualUnsealPath, unsealPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", unsealPath, mutualUnsealPath, err)
+		}
+
+		mutualSealedPath := mutualPath + "/" + stores.FTSealed.String()
+		if _, err := os.Stat(mutualSealedPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualSealedPath, 0777); err != nil {
+				return err
+			}
+		}
+		sealedPath := filepath.Join(p, stores.FTSealed.String())
+		if err := os.Remove(sealedPath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", sealedPath, err)
+		}
+		if err := os.Symlink(mutualSealedPath, sealedPath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", sealedPath, mutualSealedPath, err)
+		}
+
+		mutualCachePath := mutualPath + "/" + stores.FTCache.String()
+		if _, err := os.Stat(mutualCachePath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil
+			}
+			if err := os.MkdirAll(mutualCachePath, 0777); err != nil {
+				return err
+			}
+		}
+		cachePath := filepath.Join(p, stores.FTCache.String())
+		if err := os.Remove(cachePath); err != nil && !os.IsNotExist(err) {
+			return xerrors.Errorf("remove '%s': %w", cachePath, err)
+		}
+		if err := os.Symlink(mutualCachePath, cachePath); err != nil {
+			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
+		}
+
+		mutualSectorPath := filepath.Join(cctx.String("minerActualRepoPath"), "mutual-sector")
+		if _, err := os.Stat(mutualSectorPath); err == nil {
+			localPath, err := homedir.Expand("~/lotus_local_data")
+			if err != nil {
+				return err
+			}
+			localStagedPath := filepath.Join(localPath, "/mutual-sector")
+			if _, err := os.Stat(localStagedPath); err != nil {
+				if !os.IsNotExist(err) {
+					return xerrors.Errorf("stat mutual sector: %w", err)
+				}
+				cmd := exec.Command("cp", "-rf", mutualSectorPath, localStagedPath)
+				log.Infof("copping staged sector: cp -rf %s %s", mutualSectorPath, localStagedPath)
+				if err := cmd.Run(); err != nil {
+					return xerrors.Errorf("copy staged sector: %w", err)
+				}
+			}
+		}
+
 		// Setup remote sector store
 		spt, err := ffiwrapper.SealProofTypeFromSectorSize(ssize)
 		if err != nil {
@@ -284,7 +390,7 @@ var runCmd = &cli.Command{
 			LocalWorker: sectorstorage.NewLocalWorker(sectorstorage.WorkerConfig{
 				SealProof: spt,
 				TaskTypes: taskTypes,
-			}, remote, localStore, nodeApi),
+			}, remote, localStore, nodeApi, workerGroupsId, mutualPath, mutualSectorPath),
 		}
 
 		mux := mux.NewRouter()
@@ -336,43 +442,4 @@ var runCmd = &cli.Command{
 
 		return srv.Serve(nl)
 	},
-}
-
-func watchMinerConn(ctx context.Context, cctx *cli.Context, nodeApi api.StorageMiner) {
-	go func() {
-		closing, err := nodeApi.Closing(ctx)
-		if err != nil {
-			log.Errorf("failed to get remote closing channel: %+v", err)
-		}
-
-		select {
-		case <-closing:
-		case <-ctx.Done():
-		}
-
-		if ctx.Err() != nil {
-			return // graceful shutdown
-		}
-
-		log.Warnf("Connection with miner node lost, restarting")
-
-		exe, err := os.Executable()
-		if err != nil {
-			log.Errorf("getting executable for auto-restart: %+v", err)
-		}
-
-		log.Sync()
-
-		// TODO: there are probably cleaner/more graceful ways to restart,
-		//  but this is good enough for now (FSM can recover from the mess this creates)
-		if err := syscall.Exec(exe, []string{exe, "run",
-			fmt.Sprintf("--address=%s", cctx.String("address")),
-			fmt.Sprintf("--no-local-storage=%t", cctx.Bool("no-local-storage")),
-			fmt.Sprintf("--precommit1=%t", cctx.Bool("precommit1")),
-			fmt.Sprintf("--precommit2=%t", cctx.Bool("precommit2")),
-			fmt.Sprintf("--commit=%t", cctx.Bool("commit")),
-		}, os.Environ()); err != nil {
-			fmt.Println(err)
-		}
-	}()
 }

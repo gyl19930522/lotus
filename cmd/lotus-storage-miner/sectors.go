@@ -31,6 +31,7 @@ var sectorsCmd = &cli.Command{
 		sectorsMarkForUpgradeCmd,
 		sectorsStartSealCmd,
 		sectorsSealDelayCmd,
+		sectorsMutualSectorCmd,
 	},
 }
 
@@ -340,15 +341,41 @@ var sectorsUpdateCmd = &cli.Command{
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
 		if cctx.Args().Len() < 2 {
-			return xerrors.Errorf("must pass sector number and new state")
+			return xerrors.Errorf("must pass sector ID and new state")
 		}
 
 		id, err := strconv.ParseUint(cctx.Args().Get(0), 10, 64)
 		if err != nil {
-			return xerrors.Errorf("could not parse sector number: %w", err)
+			return xerrors.Errorf("could not parse sector ID: %w", err)
 		}
 
 		return nodeApi.SectorsUpdate(ctx, abi.SectorNumber(id), api.SectorState(cctx.Args().Get(1)))
+	},
+}
+
+var sectorsMutualSectorCmd = &cli.Command{
+	Name:  "mutualSector",
+	Usage: "create mutual unseal sector",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:    FlagMinerRepo,
+			EnvVars: []string{"LOTUS_STORAGE_PATH"},
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if cctx.String(FlagMinerRepo) == "" {
+			return xerrors.Errorf("--" + FlagMinerRepo + " is required")
+		}
+
+		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
+		ctx := lcli.ReqContext(cctx)
+
+		storageReopPath := cctx.String(FlagMinerRepo)
+		return nodeApi.MutualSector(ctx, storageReopPath)
 	},
 }
 
