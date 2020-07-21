@@ -358,13 +358,13 @@ var sectorsMutualSectorCmd = &cli.Command{
 	Usage: "create mutual unseal sector",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:    FlagStorageRepo,
+			Name:    FlagMinerRepo,
 			EnvVars: []string{"LOTUS_STORAGE_PATH"},
 		},
 	},
 	Action: func(cctx *cli.Context) error {
-		if cctx.String(FlagStorageRepo) == "" {
-			return xerrors.Errorf("--" + FlagStorageRepo + " is required")
+		if cctx.String(FlagMinerRepo) == "" {
+			return xerrors.Errorf("--" + FlagMinerRepo + " is required")
 		}
 
 		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
@@ -374,7 +374,7 @@ var sectorsMutualSectorCmd = &cli.Command{
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
 
-		storageReopPath := cctx.String(FlagStorageRepo)
+		storageReopPath := cctx.String(FlagMinerRepo)
 		return nodeApi.MutualSector(ctx, storageReopPath)
 	},
 }

@@ -14,7 +14,7 @@ import (
 	swarm "github.com/libp2p/go-libp2p-swarm"
 	ma "github.com/multiformats/go-multiaddr"
 	"go.uber.org/fx"
-//	"golang.org/x/xerrors"
+	//	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-jsonrpc/auth"
 
@@ -42,9 +42,9 @@ type jwtPayload struct {
 func (a *CommonAPI) AuthVerify(ctx context.Context, token string) ([]auth.Permission, error) {
 	//var payload jwtPayload
 	/*
-	if _, err := jwt.Verify([]byte(token), (*jwt.HMACSHA)(a.APISecret), &payload); err != nil {
-		return nil, xerrors.Errorf("JWT Verification failed: %w", err)
-	}
+		if _, err := jwt.Verify([]byte(token), (*jwt.HMACSHA)(a.APISecret), &payload); err != nil {
+			return nil, xerrors.Errorf("JWT Verification failed: %w", err)
+		}
 	*/
 
 	var p = jwtPayload{

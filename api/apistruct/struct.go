@@ -902,7 +902,7 @@ func (c *StorageMinerStruct) AddMutualPath(ctx context.Context, groupsId int, mu
 	return c.Internal.AddMutualPath(ctx, groupsId, mutualPath)
 }
 
-func (c *StorageMinerStruct) StorageAttach(ctx context.Context, si stores.StorageInfo, st stores.FsStat) error {
+func (c *StorageMinerStruct) StorageAttach(ctx context.Context, si stores.StorageInfo, st fsutil.FsStat) error {
 	return c.Internal.StorageAttach(ctx, si, st)
 }
 
