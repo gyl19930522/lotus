@@ -38,7 +38,10 @@ import (
 
 var log = logging.Logger("main")
 
-const FlagStorageRepo = "workerrepo"
+const FlagWorkerRepo = "worker-repo"
+
+// TODO remove after deprecation period
+const FlagWorkerRepoDeprecation = "workerrepo"
 
 func main() {
 	lotuslog.SetupLogLevels()
@@ -50,19 +53,23 @@ func main() {
 	}
 
 	app := &cli.App{
-		Name:    "lotus-seal-worker",
-		Usage:   "Remote storage miner worker",
+		Name:    "lotus-worker",
+		Usage:   "Remote miner worker",
 		Version: build.UserVersion(),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
-				Name:    FlagStorageRepo,
-				EnvVars: []string{"WORKER_PATH"},
+				Name:    FlagWorkerRepo,
+				Aliases: []string{FlagWorkerRepoDeprecation},
+				EnvVars: []string{"LOTUS_WORKER_PATH", "WORKER_PATH"},
 				Value:   "~/.lotusworker", // TODO: Consider XDG_DATA_HOME
+				Usage:   fmt.Sprintf("Specify worker repo path. flag %s and env WORKER_PATH are DEPRECATION, will REMOVE SOON", FlagWorkerRepoDeprecation),
 			},
 			&cli.StringFlag{
-				Name:    "storagerepo",
-				EnvVars: []string{"LOTUS_STORAGE_PATH"},
-				Value:   "~/.lotusstorage", // TODO: Consider XDG_DATA_HOME
+				Name:    "miner-repo",
+				Aliases: []string{"storagerepo"},
+				EnvVars: []string{"LOTUS_MINER_PATH", "LOTUS_STORAGE_PATH"},
+				Value:   "~/.lotusminer", // TODO: Consider XDG_DATA_HOME
+				Usage:   fmt.Sprintf("Specify miner repo path. flag storagerepo and env LOTUS_STORAGE_PATH are DEPRECATION, will REMOVE SOON"),
 			},
 			&cli.BoolFlag{
 				Name:  "enable-gpu-proving",
@@ -161,7 +168,7 @@ var runCmd = &cli.Command{
 			return err
 		}
 		if v.APIVersion != build.APIVersion {
-			return xerrors.Errorf("lotus-storage-miner API version doesn't match: local: ", api.Version{APIVersion: build.APIVersion})
+			return xerrors.Errorf("lotus-miner API version doesn't match: local: ", api.Version{APIVersion: build.APIVersion})
 		}
 		log.Infof("Remote version %s", v)
 
@@ -202,7 +209,7 @@ var runCmd = &cli.Command{
 
 		// Open repo
 
-		repoPath := cctx.String(FlagStorageRepo)
+		repoPath := cctx.String(FlagWorkerRepo)
 		r, err := repo.NewFS(repoPath)
 		if err != nil {
 			return err
@@ -252,7 +259,7 @@ var runCmd = &cli.Command{
 
 			{
 				// init datastore for r.Exists
-				_, err := lr.Datastore("/")
+				_, err := lr.Datastore("/metadata")
 				if err != nil {
 					return err
 				}

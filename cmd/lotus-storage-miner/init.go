@@ -50,7 +50,7 @@ import (
 
 var initCmd = &cli.Command{
 	Name:  "init",
-	Usage: "Initialize a lotus storage miner repo",
+	Usage: "Initialize a lotus miner repo",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  "actor",
@@ -107,7 +107,7 @@ var initCmd = &cli.Command{
 		},
 	},
 	Action: func(cctx *cli.Context) error {
-		log.Info("Initializing lotus storage miner")
+		log.Info("Initializing lotus miner")
 
 		sectorSizeInt, err := units.RAMInBytes(cctx.String("sector-size"))
 		if err != nil {
@@ -151,7 +151,7 @@ var initCmd = &cli.Command{
 
 		log.Info("Checking if repo exists")
 
-		repoPath := cctx.String(FlagStorageRepo)
+		repoPath := cctx.String(FlagMinerRepo)
 		r, err := repo.NewFS(repoPath)
 		if err != nil {
 			return err
@@ -162,7 +162,7 @@ var initCmd = &cli.Command{
 			return err
 		}
 		if ok {
-			return xerrors.Errorf("repo at '%s' is already initialized", cctx.String(FlagStorageRepo))
+			return xerrors.Errorf("repo at '%s' is already initialized", cctx.String(FlagMinerRepo))
 		}
 
 		log.Info("Checking full node version")
@@ -236,7 +236,7 @@ var initCmd = &cli.Command{
 		}
 
 		if err := storageMinerInit(ctx, cctx, api, r, ssize, gasPrice); err != nil {
-			log.Errorf("Failed to initialize lotus-storage-miner: %+v", err)
+			log.Errorf("Failed to initialize lotus-miner: %+v", err)
 			path, err := homedir.Expand(repoPath)
 			if err != nil {
 				return err
@@ -265,7 +265,7 @@ var initCmd = &cli.Command{
 		}
 
 		// TODO: Point to setting storage price, maybe do it interactively or something
-		log.Info("Storage miner successfully created, you can now start it with 'lotus-storage-miner run'")
+		log.Info("Miner successfully created, you can now start it with 'lotus-miner run'")
 
 		return nil
 	},
@@ -375,10 +375,8 @@ func migratePreSealMeta(ctx context.Context, api lapi.FullNode, metadata string,
 		}*/
 	}
 
-	log.Infof("Setting next sector ID to %d", maxSectorID+1)
-
 	buf := make([]byte, binary.MaxVarintLen64)
-	size := binary.PutUvarint(buf, uint64(maxSectorID+1))
+	size := binary.PutUvarint(buf, uint64(maxSectorID))
 	return mds.Put(datastore.NewKey(modules.StorageCounterDSPrefix), buf[:size])
 }
 
@@ -472,11 +470,11 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api lapi.FullNode,
 				cerr := configureStorageMiner(ctx, api, a, peerid, gasPrice)
 
 				if err := m.Stop(ctx); err != nil {
-					log.Error("failed to shut down storage miner: ", err)
+					log.Error("failed to shut down miner: ", err)
 				}
 
 				if cerr != nil {
-					return xerrors.Errorf("failed to configure storage miner: %w", err)
+					return xerrors.Errorf("failed to configure miner: %w", cerr)
 				}
 			}
 
@@ -510,7 +508,7 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api lapi.FullNode,
 		}
 
 		if err := configureStorageMiner(ctx, api, a, peerid, gasPrice); err != nil {
-			return xerrors.Errorf("failed to configure storage miner: %w", err)
+			return xerrors.Errorf("failed to configure miner: %w", err)
 		}
 
 		addr = a
@@ -523,7 +521,7 @@ func storageMinerInit(ctx context.Context, cctx *cli.Context, api lapi.FullNode,
 		addr = a
 	}
 
-	log.Infof("Created new storage miner: %s", addr)
+	log.Infof("Created new miner: %s", addr)
 	if err := mds.Put(datastore.NewKey("miner-address"), addr.Bytes()); err != nil {
 		return err
 	}
@@ -575,7 +573,7 @@ func configureStorageMiner(ctx context.Context, api lapi.FullNode, addr address.
 		Params:   enc,
 		Value:    types.NewInt(0),
 		GasPrice: gasPrice,
-		GasLimit: 99999999,
+		GasLimit: 0,
 	}
 
 	smsg, err := api.MpoolPushMessage(ctx, msg)
@@ -654,7 +652,7 @@ func createStorageMiner(ctx context.Context, api lapi.FullNode, peerid peer.ID, 
 		Method: builtin.MethodsPower.CreateMiner,
 		Params: params,
 
-		GasLimit: 10000000,
+		GasLimit: 0,
 		GasPrice: gasPrice,
 	}
 
@@ -672,7 +670,7 @@ func createStorageMiner(ctx context.Context, api lapi.FullNode, peerid peer.ID, 
 	}
 
 	if mw.Receipt.ExitCode != 0 {
-		return address.Undef, xerrors.Errorf("create storage miner failed: exit code %d", mw.Receipt.ExitCode)
+		return address.Undef, xerrors.Errorf("create miner failed: exit code %d", mw.Receipt.ExitCode)
 	}
 
 	var retval power.CreateMinerReturn
@@ -680,6 +678,6 @@ func createStorageMiner(ctx context.Context, api lapi.FullNode, peerid peer.ID, 
 		return address.Undef, err
 	}
 
-	log.Infof("New storage miners address is: %s (%s)", retval.IDAddress, retval.RobustAddress)
+	log.Infof("New miners address is: %s (%s)", retval.IDAddress, retval.RobustAddress)
 	return retval.IDAddress, nil
 }
