@@ -11,8 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
-	"time"
 	"strings"
 	"syscall"
 	"time"
@@ -156,6 +154,7 @@ var runCmd = &cli.Command{
 
 		if cctx.String("workerGroupsId") == "" {
 			return xerrors.Errorf("--workerGroupsId is required")
+		}
 
 		if cctx.String("minerActualRepoPath") == "" {
 			return xerrors.Errorf("--minerActualRepoPath is required")
