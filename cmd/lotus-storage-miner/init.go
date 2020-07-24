@@ -256,13 +256,13 @@ var initCmd = &cli.Command{
 			return xerrors.Errorf("remove '%s': %w", pathConfigJson, err)
 		}
 
-		mutualSectorPath, err := homedir.Expand("~/lotus_local_data")
-		if err != nil {
-			xerrors.Errorf("could not expand home dir (%s): %w", "~/lotus_local_data", err)
-		}
-		if err := os.RemoveAll(mutualSectorPath); err != nil && !os.IsNotExist(err) {
-			return xerrors.Errorf("remove '%s': %w", mutualSectorPath, err)
-		}
+		//mutualSectorPath, err := homedir.Expand("~/lotus_local_data")
+		//if err != nil {
+		//	xerrors.Errorf("could not expand home dir (%s): %w", "~/lotus_local_data", err)
+		//}
+		//if err := os.RemoveAll(mutualSectorPath); err != nil && !os.IsNotExist(err) {
+		//	return xerrors.Errorf("remove '%s': %w", mutualSectorPath, err)
+		//}
 
 		// TODO: Point to setting storage price, maybe do it interactively or something
 		log.Info("Miner successfully created, you can now start it with 'lotus-miner run'")
