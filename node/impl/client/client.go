@@ -31,6 +31,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/pieceio"
 	rm "github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/sector-storage/ffiwrapper"
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -162,6 +163,7 @@ func (a *API) ClientListDeals(ctx context.Context) ([]api.DealInfo, error) {
 	for k, v := range deals {
 		out[k] = api.DealInfo{
 			ProposalCid: v.ProposalCid,
+			DataRef:     v.DataRef,
 			State:       v.State,
 			Message:     v.Message,
 			Provider:    v.Proposal.Provider,
@@ -260,6 +262,7 @@ func (a *API) makeRetrievalQuery(ctx context.Context, rp rm.RetrievalPeer, paylo
 		Piece:                   piece,
 		Size:                    queryResponse.Size,
 		MinPrice:                queryResponse.PieceRetrievalPrice(),
+		UnsealPrice:             queryResponse.UnsealPrice,
 		PaymentInterval:         queryResponse.MaxPaymentInterval,
 		PaymentIntervalIncrease: queryResponse.MaxPaymentIntervalIncrease,
 		Miner:                   queryResponse.PaymentAddress, // TODO: check
@@ -417,10 +420,14 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 
 	ppb := types.BigDiv(order.Total, types.NewInt(order.Size))
 
-	_, err := a.Retrieval.Retrieve(
+	params, err := rm.NewParamsV1(ppb, order.PaymentInterval, order.PaymentIntervalIncrease, shared.AllSelector(), order.Piece, order.UnsealPrice)
+	if err != nil {
+		return xerrors.Errorf("Error in retrieval params: %s", err)
+	}
+	_, err = a.Retrieval.Retrieve(
 		ctx,
 		order.Root,
-		rm.NewParamsV0(ppb, order.PaymentInterval, order.PaymentIntervalIncrease),
+		params,
 		order.Total,
 		order.MinerPeerID,
 		order.Client,
@@ -433,7 +440,7 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 		return xerrors.New("Retrieval Timed Out")
 	case err := <-retrievalResult:
 		if err != nil {
-			return xerrors.Errorf("RetrieveUnixfs: %w", err)
+			return xerrors.Errorf("Retrieve: %w", err)
 		}
 	}
 
@@ -493,6 +500,7 @@ func (a *API) ClientCalcCommP(ctx context.Context, inpath string, miner address.
 	if err != nil {
 		return nil, err
 	}
+	defer rdr.Close()
 
 	stat, err := rdr.Stat()
 	if err != nil {
@@ -553,6 +561,7 @@ func (a *API) clientImport(ctx context.Context, ref api.FileRef, store *importmg
 	if err != nil {
 		return cid.Undef, err
 	}
+	defer f.Close()
 
 	stat, err := f.Stat()
 	if err != nil {

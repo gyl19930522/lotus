@@ -367,7 +367,8 @@ type FullNode interface {
 	PaychGet(ctx context.Context, from, to address.Address, ensureFunds types.BigInt) (*ChannelInfo, error)
 	PaychList(context.Context) ([]address.Address, error)
 	PaychStatus(context.Context, address.Address) (*PaychStatus, error)
-	PaychClose(context.Context, address.Address) (cid.Cid, error)
+	PaychSettle(context.Context, address.Address) (cid.Cid, error)
+	PaychCollect(context.Context, address.Address) (cid.Cid, error)
 	PaychAllocateLane(ctx context.Context, ch address.Address) (uint64, error)
 	PaychNewPayment(ctx context.Context, from, to address.Address, vouchers []VoucherSpec) (*PaymentInfo, error)
 	PaychVoucherCheckValid(context.Context, address.Address, *paych.SignedVoucher) error
@@ -421,6 +422,7 @@ type DealInfo struct {
 	Message     string // more information about deal state, particularly errors
 	Provider    address.Address
 
+	DataRef  *storagemarket.DataRef
 	PieceCID cid.Cid
 	Size     uint64
 
@@ -505,6 +507,7 @@ type QueryOffer struct {
 
 	Size                    uint64
 	MinPrice                types.BigInt
+	UnsealPrice             types.BigInt
 	PaymentInterval         uint64
 	PaymentIntervalIncrease uint64
 	Miner                   address.Address
@@ -517,6 +520,7 @@ func (o *QueryOffer) Order(client address.Address) RetrievalOrder {
 		Piece:                   o.Piece,
 		Size:                    o.Size,
 		Total:                   o.MinPrice,
+		UnsealPrice:             o.UnsealPrice,
 		PaymentInterval:         o.PaymentInterval,
 		PaymentIntervalIncrease: o.PaymentIntervalIncrease,
 		Client:                  client,
@@ -543,6 +547,7 @@ type RetrievalOrder struct {
 	Size  uint64
 	// TODO: support offset
 	Total                   types.BigInt
+	UnsealPrice             types.BigInt
 	PaymentInterval         uint64
 	PaymentIntervalIncrease uint64
 	Client                  address.Address
