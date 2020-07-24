@@ -180,7 +180,8 @@ type FullNodeStruct struct {
 		PaychGet                   func(ctx context.Context, from, to address.Address, ensureFunds types.BigInt) (*api.ChannelInfo, error)   `perm:"sign"`
 		PaychList                  func(context.Context) ([]address.Address, error)                                                          `perm:"read"`
 		PaychStatus                func(context.Context, address.Address) (*api.PaychStatus, error)                                          `perm:"read"`
-		PaychClose                 func(context.Context, address.Address) (cid.Cid, error)                                                   `perm:"sign"`
+		PaychSettle                func(context.Context, address.Address) (cid.Cid, error)                                                   `perm:"sign"`
+		PaychCollect               func(context.Context, address.Address) (cid.Cid, error)                                                   `perm:"sign"`
 		PaychAllocateLane          func(context.Context, address.Address) (uint64, error)                                                    `perm:"sign"`
 		PaychNewPayment            func(ctx context.Context, from, to address.Address, vouchers []api.VoucherSpec) (*api.PaymentInfo, error) `perm:"sign"`
 		PaychVoucherCheck          func(context.Context, *paych.SignedVoucher) error                                                         `perm:"read"`
@@ -230,6 +231,7 @@ type StorageMinerStruct struct {
 		WorkerConnect func(context.Context, string) error                             `perm:"admin"` // TODO: worker perm
 		WorkerStats   func(context.Context) (map[uint64]storiface.WorkerStats, error) `perm:"admin"`
 		AddMutualPath func(context.Context, int, string) error                        `perm:"admin"`
+		WorkerJobs    func(context.Context) (map[uint64][]storiface.WorkerJob, error) `perm:"admin"`
 
 		StorageList          func(context.Context) (map[stores.ID][]stores.Decl, error)                                                                                    `perm:"admin"`
 		StorageLocal         func(context.Context) (map[stores.ID]string, error)                                                                                           `perm:"admin"`
@@ -806,8 +808,12 @@ func (c *FullNodeStruct) PaychVoucherList(ctx context.Context, pch address.Addre
 	return c.Internal.PaychVoucherList(ctx, pch)
 }
 
-func (c *FullNodeStruct) PaychClose(ctx context.Context, a address.Address) (cid.Cid, error) {
-	return c.Internal.PaychClose(ctx, a)
+func (c *FullNodeStruct) PaychSettle(ctx context.Context, a address.Address) (cid.Cid, error) {
+	return c.Internal.PaychSettle(ctx, a)
+}
+
+func (c *FullNodeStruct) PaychCollect(ctx context.Context, a address.Address) (cid.Cid, error) {
+	return c.Internal.PaychCollect(ctx, a)
 }
 
 func (c *FullNodeStruct) PaychAllocateLane(ctx context.Context, ch address.Address) (uint64, error) {
@@ -900,6 +906,10 @@ func (c *StorageMinerStruct) WorkerStats(ctx context.Context) (map[uint64]storif
 
 func (c *StorageMinerStruct) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
 	return c.Internal.AddMutualPath(ctx, groupsId, mutualPath)
+}
+
+func (c *StorageMinerStruct) WorkerJobs(ctx context.Context) (map[uint64][]storiface.WorkerJob, error) {
+	return c.Internal.WorkerJobs(ctx)
 }
 
 func (c *StorageMinerStruct) StorageAttach(ctx context.Context, si stores.StorageInfo, st fsutil.FsStat) error {

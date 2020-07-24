@@ -11,8 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	//	"syscall"
-	//	"time"
+	"syscall"
+	"time"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -108,7 +111,8 @@ var runCmd = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  "address",
-			Usage: "Locally reachable address",
+			Usage: "locally reachable address",
+			Value: "0.0.0.0",
 		},
 		&cli.BoolFlag{
 			Name:  "no-local-storage",
@@ -129,6 +133,11 @@ var runCmd = &cli.Command{
 			Usage: "enable commit (32G sectors: all cores or GPUs, 128GiB Memory + 64GiB swap)",
 			Value: true,
 		},
+		&cli.StringFlag{
+			Name:  "timeout",
+			Usage: "used when address is unspecified. must be a valid duration recognized by golang's time.ParseDuration function",
+			Value: "30m",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Bool("enable-gpu-proving") {
@@ -147,18 +156,33 @@ var runCmd = &cli.Command{
 
 		if cctx.String("workerGroupsId") == "" {
 			return xerrors.Errorf("--workerGroupsId is required")
-		}
 
 		if cctx.String("minerActualRepoPath") == "" {
 			return xerrors.Errorf("--minerActualRepoPath is required")
 		}
+		// Connect to storage-miner
+		var nodeApi api.StorageMiner
+		var closer func()
+		var err error
+		for {
+			nodeApi, closer, err = lcli.GetStorageMinerAPI(cctx)
+			if err == nil {
+				break
+			}
+			fmt.Printf("\r\x1b[0KConnecting to miner API... (%s)", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
 
 		// Connect to storage-miner
+		/*
 
 		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
 		if err != nil {
 			return xerrors.Errorf("getting miner api: %w", err)
 		}
+		*/
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
 		ctx, cancel := context.WithCancel(ctx)
@@ -276,8 +300,24 @@ var runCmd = &cli.Command{
 		}
 
 		log.Info("Opening local storage; connecting to master")
+		const unspecifiedAddress = "0.0.0.0"
+		address := cctx.String("address")
+		addressSlice := strings.Split(address, ":")
+		if ip := net.ParseIP(addressSlice[0]); ip != nil {
+			if ip.String() == unspecifiedAddress {
+				timeout, err := time.ParseDuration(cctx.String("timeout"))
+				if err != nil {
+					return err
+				}
+				rip, err := extractRoutableIP(timeout)
+				if err != nil {
+					return err
+				}
+				address = rip + ":" + addressSlice[1]
+			}
+		}
 
-		localStore, err := stores.NewLocal(ctx, lr, nodeApi, []string{"http://" + cctx.String("address") + "/remote"})
+		localStore, err := stores.NewLocal(ctx, lr, nodeApi, []string{"http://" + address + "/remote"})
 		if err != nil {
 			return err
 		}
@@ -395,7 +435,7 @@ var runCmd = &cli.Command{
 
 		mux := mux.NewRouter()
 
-		log.Info("Setting up control endpoint at " + cctx.String("address"))
+		log.Info("Setting up control endpoint at " + address)
 
 		rpcServer := jsonrpc.NewServer()
 		rpcServer.Register("Filecoin", apistruct.PermissionedWorkerAPI(workerApi))
@@ -425,7 +465,7 @@ var runCmd = &cli.Command{
 			log.Warn("Graceful shutdown successful")
 		}()
 
-		nl, err := net.Listen("tcp", cctx.String("address"))
+		nl, err := net.Listen("tcp", address)
 		if err != nil {
 			return err
 		}
@@ -433,7 +473,7 @@ var runCmd = &cli.Command{
 		log.Info("Waiting for tasks")
 
 		go func() {
-			if err := nodeApi.WorkerConnect(ctx, "ws://"+cctx.String("address")+"/rpc/v0"); err != nil {
+			if err := nodeApi.WorkerConnect(ctx, "ws://"+address+"/rpc/v0"); err != nil {
 				log.Errorf("Registering worker failed: %+v", err)
 				cancel()
 				return
@@ -442,4 +482,67 @@ var runCmd = &cli.Command{
 
 		return srv.Serve(nl)
 	},
+}
+
+func watchMinerConn(ctx context.Context, cctx *cli.Context, nodeApi api.StorageMiner) {
+	go func() {
+		closing, err := nodeApi.Closing(ctx)
+		if err != nil {
+			log.Errorf("failed to get remote closing channel: %+v", err)
+		}
+
+		select {
+		case <-closing:
+		case <-ctx.Done():
+		}
+
+		if ctx.Err() != nil {
+			return // graceful shutdown
+		}
+
+		log.Warnf("Connection with miner node lost, restarting")
+
+		exe, err := os.Executable()
+		if err != nil {
+			log.Errorf("getting executable for auto-restart: %+v", err)
+		}
+
+		log.Sync()
+
+		// TODO: there are probably cleaner/more graceful ways to restart,
+		//  but this is good enough for now (FSM can recover from the mess this creates)
+		if err := syscall.Exec(exe, []string{exe, "run",
+			fmt.Sprintf("--address=%s", cctx.String("address")),
+			fmt.Sprintf("--no-local-storage=%t", cctx.Bool("no-local-storage")),
+			fmt.Sprintf("--precommit1=%t", cctx.Bool("precommit1")),
+			fmt.Sprintf("--precommit2=%t", cctx.Bool("precommit2")),
+			fmt.Sprintf("--commit=%t", cctx.Bool("commit")),
+		}, os.Environ()); err != nil {
+			fmt.Println(err)
+		}
+	}()
+}
+
+func extractRoutableIP(timeout time.Duration) (string, error) {
+	minerMultiAddrKey := "MINER_API_INFO"
+	deprecatedMinerMultiAddrKey := "STORAGE_API_INFO"
+	env, ok := os.LookupEnv(minerMultiAddrKey)
+	if !ok {
+		// TODO remove after deprecation period
+		env, ok = os.LookupEnv(deprecatedMinerMultiAddrKey)
+		if ok {
+			log.Warnf("Using a deprecated env(%s) value, please use env(%s) instead.", deprecatedMinerMultiAddrKey, minerMultiAddrKey)
+		}
+		return "", xerrors.New("MINER_API_INFO environment variable required to extract IP")
+	}
+	minerAddr := strings.Split(env, "/")
+	conn, err := net.DialTimeout("tcp", minerAddr[2]+":"+minerAddr[4], timeout)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.TCPAddr)
+
+	return strings.Split(localAddr.IP.String(), ":")[0], nil
 }

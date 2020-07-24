@@ -3,16 +3,9 @@ package genesis
 import (
 	"context"
 	"encoding/json"
+	"github.com/filecoin-project/lotus/lib/sigs"
+	"github.com/filecoin-project/specs-actors/actors/crypto"
 
-	"github.com/filecoin-project/go-amt-ipld/v2"
-	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/account"
-	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
-	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
-	"github.com/filecoin-project/specs-actors/actors/runtime"
-	"github.com/filecoin-project/specs-actors/actors/util/adt"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	bstore "github.com/ipfs/go-ipfs-blockstore"
@@ -21,6 +14,14 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-address"
+
+	"github.com/filecoin-project/specs-actors/actors/abi"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/account"
+	"github.com/filecoin-project/specs-actors/actors/builtin/multisig"
+	"github.com/filecoin-project/specs-actors/actors/builtin/verifreg"
+	"github.com/filecoin-project/specs-actors/actors/util/adt"
 
 	"github.com/filecoin-project/lotus/chain/state"
 	"github.com/filecoin-project/lotus/chain/store"
@@ -282,6 +283,43 @@ func MakeInitialStateTree(ctx context.Context, bs bstore.Blockstore, template ge
 		return nil, xerrors.Errorf("setting account from actmap: %w", err)
 	}
 
+	// Setup the first verifier as ID-address 81
+	// TODO: remove this
+	skBytes, err := sigs.Generate(crypto.SigTypeBLS)
+	if err != nil {
+		return nil, xerrors.Errorf("creating random verifier secret key: %w", err)
+	}
+
+	verifierPk, err := sigs.ToPublic(crypto.SigTypeBLS, skBytes)
+	if err != nil {
+		return nil, xerrors.Errorf("creating random verifier public key: %w", err)
+	}
+
+	verifierAd, err := address.NewBLSAddress(verifierPk)
+	if err != nil {
+		return nil, xerrors.Errorf("creating random verifier address: %w", err)
+	}
+
+	verifierId, err := address.NewIDAddress(81)
+	if err != nil {
+		return nil, err
+	}
+
+	verifierState, err := cst.Put(ctx, &account.State{Address: verifierAd})
+	if err != nil {
+		return nil, err
+	}
+
+	err = state.SetActor(verifierId, &types.Actor{
+		Code:    builtin.AccountActorCodeID,
+		Balance: types.NewInt(0),
+		Head:    verifierState,
+	})
+
+	if err != nil {
+		return nil, xerrors.Errorf("setting account from actmap: %w", err)
+	}
+
 	return state, nil
 }
 
@@ -296,12 +334,12 @@ func VerifyPreSealedData(ctx context.Context, cs *store.ChainStore, stateroot ci
 		}
 	}
 
-	verifier, err := address.NewIDAddress(80)
+	verifier, err := address.NewIDAddress(81)
 	if err != nil {
 		return cid.Undef, err
 	}
 
-	vm, err := vm.NewVM(stateroot, 0, &fakeRand{}, cs.Blockstore(), &fakedSigSyscalls{cs.VMSys()})
+	vm, err := vm.NewVM(stateroot, 0, &fakeRand{}, cs.Blockstore(), mkFakedSigSyscalls(cs.VMSys()))
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to create NewVM: %w", err)
 	}
@@ -333,7 +371,7 @@ func VerifyPreSealedData(ctx context.Context, cs *store.ChainStore, stateroot ci
 	return st, nil
 }
 
-func MakeGenesisBlock(ctx context.Context, bs bstore.Blockstore, sys runtime.Syscalls, template genesis.Template) (*GenesisBootstrap, error) {
+func MakeGenesisBlock(ctx context.Context, bs bstore.Blockstore, sys vm.SyscallBuilder, template genesis.Template) (*GenesisBootstrap, error) {
 	st, err := MakeInitialStateTree(ctx, bs, template)
 	if err != nil {
 		return nil, xerrors.Errorf("make initial state tree failed: %w", err)
@@ -358,9 +396,8 @@ func MakeGenesisBlock(ctx context.Context, bs bstore.Blockstore, sys runtime.Sys
 		return nil, xerrors.Errorf("setup miners failed: %w", err)
 	}
 
-	cst := cbor.NewCborStore(bs)
-
-	emptyroot, err := amt.FromArray(ctx, cst, nil)
+	store := adt.WrapStore(ctx, cbor.NewCborStore(bs))
+	emptyroot, err := adt.MakeEmptyArray(store).Root()
 	if err != nil {
 		return nil, xerrors.Errorf("amt build failed: %w", err)
 	}

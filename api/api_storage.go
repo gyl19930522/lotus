@@ -63,6 +63,7 @@ type StorageMiner interface {
 	WorkerConnect(context.Context, string) error
 	WorkerStats(context.Context) (map[uint64]storiface.WorkerStats, error)
 	AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error
+	WorkerJobs(context.Context) (map[uint64][]storiface.WorkerJob, error)
 
 	stores.SectorIndex
 
