@@ -14,7 +14,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin/power"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	lru "github.com/hashicorp/golang-lru"
 
@@ -33,7 +32,7 @@ import (
 var log = logging.Logger("miner")
 
 // returns a callback reporting whether we mined a blocks in this round
-type waitFunc func(ctx context.Context, baseTime uint64) (func(bool, error), error)
+type waitFunc func(ctx context.Context, baseTime uint64) (func(bool, error), abi.ChainEpoch, error)
 
 func randTimeOffset(width time.Duration) time.Duration {
 	buf := make([]byte, 8)
@@ -53,7 +52,7 @@ func NewMiner(api api.FullNode, epp gen.WinningPoStProver, addr address.Address)
 		api:     api,
 		epp:     epp,
 		address: addr,
-		waitFunc: func(ctx context.Context, baseTime uint64) (func(bool, error), error) {
+		waitFunc: func(ctx context.Context, baseTime uint64) (func(bool, error), abi.ChainEpoch, error) {
 			// Wait around for half the block time in case other parents come in
 			deadline := baseTime + build.PropagationDelaySecs
 			baseT := time.Unix(int64(deadline), 0)
@@ -62,7 +61,7 @@ func NewMiner(api api.FullNode, epp gen.WinningPoStProver, addr address.Address)
 
 			build.Clock.Sleep(build.Clock.Until(baseT))
 
-			return func(bool, error) {}, nil
+			return func(bool, error) {}, 0, nil
 		},
 		minedBlockHeights: arc,
 	}
@@ -155,7 +154,7 @@ func (m *Miner) mine(ctx context.Context) {
 		}
 
 		// Wait until propagation delay period after block we plan to mine on
-		onDone, err := m.waitFunc(ctx, prebase.TipSet.MinTimestamp())
+		onDone, injectNulls, err := m.waitFunc(ctx, prebase.TipSet.MinTimestamp())
 		if err != nil {
 			log.Error(err)
 			continue
@@ -171,6 +170,8 @@ func (m *Miner) mine(ctx context.Context) {
 			m.niceSleep(time.Duration(build.BlockDelaySecs) * time.Second)
 			continue
 		}
+
+		base.NullRounds += injectNulls // testing
 
 		b, err := m.mineOne(ctx, base)
 		if err != nil {
@@ -269,15 +270,6 @@ func (m *Miner) GetBestMiningCandidate(ctx context.Context) (*MiningBase, error)
 	return m.lastWork, nil
 }
 
-func (m *Miner) hasPower(ctx context.Context, addr address.Address, ts *types.TipSet) (bool, error) {
-	mpower, err := m.api.StateMinerPower(ctx, addr, ts.Key())
-	if err != nil {
-		return false, err
-	}
-
-	return mpower.MinerPower.QualityAdjPower.GreaterThanEqual(power.ConsensusMinerMinPower), nil
-}
-
 // mineOne attempts to mine a single block, and does so synchronously, if and
 // only if we are eligible to mine.
 //
@@ -301,6 +293,10 @@ func (m *Miner) mineOne(ctx context.Context, base *MiningBase) (*types.BlockMsg,
 	if mbi == nil {
 		return nil, nil
 	}
+	if !mbi.HasMinPower {
+		// slashed or just have no power yet
+		return nil, nil
+	}
 
 	tMBI := build.Clock.Now()
 
@@ -308,15 +304,6 @@ func (m *Miner) mineOne(ctx context.Context, base *MiningBase) (*types.BlockMsg,
 
 	tDrand := build.Clock.Now()
 	bvals := mbi.BeaconEntries
-
-	hasPower, err := m.hasPower(ctx, m.address, base.TipSet)
-	if err != nil {
-		return nil, xerrors.Errorf("checking if miner is slashed: %w", err)
-	}
-	if !hasPower {
-		// slashed or just have no power yet
-		return nil, nil
-	}
 
 	tPowercheck := build.Clock.Now()
 

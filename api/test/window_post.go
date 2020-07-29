@@ -19,6 +19,7 @@ import (
 	sealing "github.com/filecoin-project/storage-fsm"
 
 	"github.com/filecoin-project/lotus/chain/types"
+	bminer "github.com/filecoin-project/lotus/miner"
 	"github.com/filecoin-project/lotus/node/impl"
 )
 
@@ -47,13 +48,13 @@ func TestPledgeSector(t *testing.T, b APIBuilder, blocktime time.Duration, nSect
 		defer close(done)
 		for mine {
 			build.Clock.Sleep(blocktime)
-			if err := sn[0].MineOne(ctx, func(bool, error) {
+			if err := sn[0].MineOne(ctx, bminer.MineReq{Done: func(bool, error) {
 				select {
 				case blockNotif <- struct{}{}:
 				default:
 				}
 
-			}); err != nil {
+			}}); err != nil {
 				t.Error(err)
 			}
 		}
@@ -97,7 +98,7 @@ func pledgeSectors(t *testing.T, ctx context.Context, miner TestStorageNode, n i
 
 	for len(toCheck) > 0 {
 		for n := range toCheck {
-			st, err := miner.SectorsStatus(ctx, n)
+			st, err := miner.SectorsStatus(ctx, n, false)
 			require.NoError(t, err)
 			if st.State == api.SectorState(sealing.Proving) {
 				delete(toCheck, n)
@@ -136,7 +137,7 @@ func TestWindowPost(t *testing.T, b APIBuilder, blocktime time.Duration, nSector
 		defer close(done)
 		for mine {
 			build.Clock.Sleep(blocktime)
-			if err := sn[0].MineOne(ctx, func(bool, error) {}); err != nil {
+			if err := sn[0].MineOne(ctx, MineNext); err != nil {
 				t.Error(err)
 			}
 		}
@@ -233,7 +234,7 @@ func TestWindowPost(t *testing.T, b APIBuilder, blocktime time.Duration, nSector
 	require.Equal(t, p.MinerPower, p.TotalPower)
 
 	sectors := p.MinerPower.RawBytePower.Uint64() / uint64(ssz)
-	require.Equal(t, nSectors+GenesisPreseals - 3, int(sectors)) // -3 just removed sectors
+	require.Equal(t, nSectors+GenesisPreseals-3, int(sectors)) // -3 just removed sectors
 
 	mine = false
 	<-done

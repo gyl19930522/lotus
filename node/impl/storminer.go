@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/filecoin-project/sector-storage/fsutil"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 	"net/http"
@@ -106,7 +107,8 @@ func (sm *StorageMinerAPI) MutualSector(ctx context.Context, storageRepoPath str
 	return sm.Miner.MutualSector(storageRepoPath)
 }
 
-func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber) (api.SectorInfo, error) {
+//func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber) (api.SectorInfo, error) {
+func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber, showOnChainInfo bool) (api.SectorInfo, error) {
 	info, err := sm.Miner.GetSectorInfo(sid)
 	if err != nil {
 		return api.SectorInfo{}, err
@@ -130,7 +132,7 @@ func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumb
 		}
 	}
 
-	return api.SectorInfo{
+	sInfo := api.SectorInfo{
 		SectorID: sid,
 		State:    api.SectorState(info.State),
 		CommD:    info.CommD,
@@ -149,7 +151,40 @@ func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumb
 
 		LastErr: info.LastErr,
 		Log:     log,
-	}, nil
+		// on chain info
+		SealProof:          0,
+		Activation:         0,
+		Expiration:         0,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
+		OnTime:             0,
+		Early:              0,
+	}
+
+	if !showOnChainInfo {
+		return sInfo, nil
+	}
+
+	onChainInfo, err := sm.Full.StateSectorGetInfo(ctx, sm.Miner.Address(), sid, types.EmptyTSK)
+	if err != nil {
+		return sInfo, nil
+	}
+	sInfo.SealProof = onChainInfo.SealProof
+	sInfo.Activation = onChainInfo.Activation
+	sInfo.Expiration = onChainInfo.Expiration
+	sInfo.DealWeight = onChainInfo.DealWeight
+	sInfo.VerifiedDealWeight = onChainInfo.VerifiedDealWeight
+	sInfo.InitialPledge = onChainInfo.InitialPledge
+
+	ex, err := sm.Full.StateSectorExpiration(ctx, sm.Miner.Address(), sid, types.EmptyTSK)
+	if err != nil {
+		return sInfo, nil
+	}
+	sInfo.OnTime = ex.OnTime
+	sInfo.Early = ex.Early
+
+	return sInfo, nil
 }
 
 // List all staged sectors
@@ -235,6 +270,9 @@ func (sm *StorageMinerAPI) WorkerConnect(ctx context.Context, url string) error 
 
 func (sm *StorageMinerAPI) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
 	return sm.StorageMgr.AddMutualPath(ctx, groupsId, mutualPath)
+}
+func (sm *StorageMinerAPI) SealingSchedDiag(ctx context.Context) (interface{}, error) {
+	return sm.StorageMgr.SchedDiag(ctx)
 }
 
 func (sm *StorageMinerAPI) MarketImportDealData(ctx context.Context, propCid cid.Cid, path string) error {

@@ -13,8 +13,6 @@ import (
 	"github.com/Gurpartap/async"
 	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
-	dstore "github.com/ipfs/go-datastore"
-	bstore "github.com/ipfs/go-ipfs-blockstore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/connmgr"
@@ -44,6 +42,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/vm"
+	bstore "github.com/filecoin-project/lotus/lib/blockstore"
 	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/lotus/metrics"
 )
@@ -634,10 +633,8 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) (er
 
 	validationStart := build.Clock.Now()
 	defer func() {
-		dur := time.Since(validationStart)
-		durMilli := dur.Seconds() * float64(1000)
-		stats.Record(ctx, metrics.BlockValidationDurationMilliseconds.M(durMilli))
-		log.Infow("block validation", "took", dur, "height", b.Header.Height)
+		stats.Record(ctx, metrics.BlockValidationDurationMilliseconds.M(metrics.SinceInMilliseconds(validationStart)))
+		log.Infow("block validation", "took", time.Since(validationStart), "height", b.Header.Height)
 	}()
 
 	ctx, span := trace.StartSpan(ctx, "validateBlock")
@@ -739,6 +736,15 @@ func (syncer *Syncer) ValidateBlock(ctx context.Context, b *types.FullBlock) (er
 	winnerCheck := async.Err(func() error {
 		if h.ElectionProof.WinCount < 1 {
 			return xerrors.Errorf("block is not claiming to be a winner")
+		}
+
+		hp, err := stmgr.MinerHasMinPower(ctx, syncer.sm, h.Miner, lbts)
+		if err != nil {
+			return xerrors.Errorf("determining if miner has min power failed: %w", err)
+		}
+
+		if !hp {
+			return xerrors.New("block's miner does not meet minimum power threshold")
 		}
 
 		rBeacon := *prevBeacon
@@ -1394,8 +1400,7 @@ func (syncer *Syncer) iterFullTipsets(ctx context.Context, headers []*types.TipS
 
 		for bsi := 0; bsi < len(bstout); bsi++ {
 			// temp storage so we don't persist data we dont want to
-			ds := dstore.NewMapDatastore()
-			bs := bstore.NewBlockstore(ds)
+			bs := bstore.NewTemporary()
 			blks := cbor.NewCborStore(bs)
 
 			this := headers[i-bsi]

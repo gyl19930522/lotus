@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/filecoin-project/lotus/api/test"
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/actors"
+	"github.com/filecoin-project/lotus/chain/gen"
 	genesis2 "github.com/filecoin-project/lotus/chain/gen/genesis"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -116,7 +118,7 @@ func testStorageNode(ctx context.Context, t *testing.T, waddr address.Address, a
 	// start node
 	var minerapi api.StorageMiner
 
-	mineBlock := make(chan func(bool, error))
+	mineBlock := make(chan miner.MineReq)
 	// TODO: use stop
 	_, err = node.New(ctx,
 		node.StorageMiner(&minerapi),
@@ -141,9 +143,9 @@ func testStorageNode(ctx context.Context, t *testing.T, waddr address.Address, a
 
 	err = minerapi.NetConnect(ctx, remoteAddrs)
 	require.NoError(t, err)*/
-	mineOne := func(ctx context.Context, cb func(bool, error)) error {
+	mineOne := func(ctx context.Context, req miner.MineReq) error {
 		select {
-		case mineBlock <- cb:
+		case mineBlock <- req:
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -211,11 +213,11 @@ func builder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test.TestN
 		maddrs = append(maddrs, maddr)
 		genms = append(genms, *genm)
 	}
-
 	templ := &genesis.Template{
-		Accounts:  genaccs,
-		Miners:    genms,
-		Timestamp: uint64(time.Now().Unix() - 10000), // some time sufficiently far in the past
+		Accounts:        genaccs,
+		Miners:          genms,
+		Timestamp:       uint64(time.Now().Unix() - 10000), // some time sufficiently far in the past
+		VerifregRootKey: gen.DefaultVerifregRootkeyActor,
 	}
 
 	// END PRESEAL SECTION
@@ -278,6 +280,21 @@ func builder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test.TestN
 
 	if err := mn.LinkAll(); err != nil {
 		t.Fatal(err)
+	}
+
+	if len(storers) > 0 {
+		// Mine 2 blocks to setup some CE stuff in some actors
+		var wait sync.Mutex
+		wait.Lock()
+
+		storers[0].MineOne(ctx, miner.MineReq{Done: func(bool, error) {
+			wait.Unlock()
+		}})
+		wait.Lock()
+		storers[0].MineOne(ctx, miner.MineReq{Done: func(bool, error) {
+			wait.Unlock()
+		}})
+		wait.Lock()
 	}
 
 	return fulls, storers
@@ -347,9 +364,10 @@ func mockSbBuilder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test
 		genms = append(genms, *genm)
 	}
 	templ := &genesis.Template{
-		Accounts:  genaccs,
-		Miners:    genms,
-		Timestamp: uint64(time.Now().Unix()) - (build.BlockDelaySecs * 20000),
+		Accounts:        genaccs,
+		Miners:          genms,
+		Timestamp:       uint64(time.Now().Unix()) - (build.BlockDelaySecs * 20000),
+		VerifregRootKey: gen.DefaultVerifregRootkeyActor,
 	}
 
 	// END PRESEAL SECTION
@@ -379,7 +397,6 @@ func mockSbBuilder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test
 			t.Fatalf("%+v", err)
 		}
 	}
-
 
 	for i, def := range storage {
 		// TODO: support non-bootstrap miners
@@ -417,6 +434,21 @@ func mockSbBuilder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test
 
 	if err := mn.LinkAll(); err != nil {
 		t.Fatal(err)
+	}
+
+	if len(storers) > 0 {
+		// Mine 2 blocks to setup some CE stuff in some actors
+		var wait sync.Mutex
+		wait.Lock()
+
+		storers[0].MineOne(ctx, miner.MineReq{Done: func(bool, error) {
+			wait.Unlock()
+		}})
+		wait.Lock()
+		storers[0].MineOne(ctx, miner.MineReq{Done: func(bool, error) {
+			wait.Unlock()
+		}})
+		wait.Lock()
 	}
 
 	return fulls, storers
@@ -492,12 +524,18 @@ func TestAPIDealFlowReal(t *testing.T) {
 	logging.SetLogLevel("sub", "ERROR")
 	logging.SetLogLevel("storageminer", "ERROR")
 
+	saminer.PreCommitChallengeDelay = 5
+
 	t.Run("basic", func(t *testing.T) {
 		test.TestDealFlow(t, builder, time.Second, false, false)
 	})
 
 	t.Run("fast-retrieval", func(t *testing.T) {
 		test.TestDealFlow(t, builder, time.Second, false, true)
+	})
+
+	t.Run("retrieval-second", func(t *testing.T) {
+		test.TestSenondDealRetrieval(t, builder, time.Second)
 	})
 }
 

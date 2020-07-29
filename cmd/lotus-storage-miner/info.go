@@ -24,9 +24,6 @@ import (
 var infoCmd = &cli.Command{
 	Name:  "info",
 	Usage: "Print miner info",
-	Flags: []cli.Flag{
-		&cli.BoolFlag{Name: "color"},
-	},
 	Action: func(cctx *cli.Context) error {
 		color.NoColor = !cctx.Bool("color")
 
@@ -157,6 +154,13 @@ var infoCmd = &cli.Command{
 
 		fmt.Println()
 
+		sealdur, err := nodeApi.SectorGetExpectedSealDuration(ctx)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Expected Seal Duration: %s\n\n", sealdur)
+
 		fmt.Println("Sectors:")
 		err = sectorsInfo(ctx, nodeApi)
 		if err != nil {
@@ -225,7 +229,7 @@ func sectorsInfo(ctx context.Context, napi api.StorageMiner) error {
 		"Total": len(sectors),
 	}
 	for _, s := range sectors {
-		st, err := napi.SectorsStatus(ctx, s)
+		st, err := napi.SectorsStatus(ctx, s, false)
 		if err != nil {
 			return err
 		}

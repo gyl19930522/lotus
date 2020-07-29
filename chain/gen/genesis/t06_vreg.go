@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/filecoin-project/go-address"
-	bstore "github.com/ipfs/go-ipfs-blockstore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 
 	"github.com/filecoin-project/specs-actors/actors/builtin"
@@ -12,19 +11,12 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
 
 	"github.com/filecoin-project/lotus/chain/types"
+	bstore "github.com/filecoin-project/lotus/lib/blockstore"
 )
-
-var RootVerifierAddr address.Address
 
 var RootVerifierID address.Address
 
 func init() {
-	k, err := address.NewFromString("t3qfoulel6fy6gn3hjmbhpdpf6fs5aqjb5fkurhtwvgssizq4jey5nw4ptq5up6h7jk7frdvvobv52qzmgjinq")
-	if err != nil {
-		panic(err)
-	}
-
-	RootVerifierAddr = k
 
 	idk, err := address.NewFromString("t080")
 	if err != nil {

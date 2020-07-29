@@ -9,6 +9,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-multistore"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
@@ -57,7 +58,7 @@ type FullNode interface {
 	ChainGetParentMessages(ctx context.Context, blockCid cid.Cid) ([]Message, error)
 
 	// ChainGetTipSetByHeight looks back for a tipset at the specified epoch.
-	// If there are no blocks at the specified epoch, a tipset at higher epoch
+	// If there are no blocks at the specified epoch, a tipset at an earlier epoch
 	// will be returned.
 	ChainGetTipSetByHeight(context.Context, abi.ChainEpoch, types.TipSetKey) (*types.TipSet, error)
 
@@ -67,7 +68,11 @@ type FullNode interface {
 
 	// ChainHasObj checks if a given CID exists in the chain blockstore.
 	ChainHasObj(context.Context, cid.Cid) (bool, error)
-	ChainStatObj(context.Context, cid.Cid, cid.Cid) (ObjStat, error)
+
+	// ChainStatObj returns statistics about the graph referenced by 'obj'.
+	// If 'base' is also specified, then the returned stat will be a diff
+	// between the two objects.
+	ChainStatObj(ctx context.Context, obj cid.Cid, base cid.Cid) (ObjStat, error)
 
 	// ChainSetHead forcefully sets current chain head. Use with caution.
 	ChainSetHead(context.Context, types.TipSetKey) error
@@ -201,7 +206,7 @@ type FullNode interface {
 	// ClientImport imports file under the specified path into filestore.
 	ClientImport(ctx context.Context, ref FileRef) (*ImportRes, error)
 	// ClientRemoveImport removes file import
-	ClientRemoveImport(ctx context.Context, importID int) error
+	ClientRemoveImport(ctx context.Context, importID multistore.StoreID) error
 	// ClientStartDeal proposes a deal with a miner.
 	ClientStartDeal(ctx context.Context, params *StartDealParams) (*cid.Cid, error)
 	// ClientGetDealInfo returns the latest information about a given deal.
@@ -272,6 +277,8 @@ type FullNode interface {
 	StateAllMinerFaults(ctx context.Context, lookback abi.ChainEpoch, ts types.TipSetKey) ([]*Fault, error)
 	// StateMinerRecoveries returns a bitfield indicating the recovering sectors of the given miner
 	StateMinerRecoveries(context.Context, address.Address, types.TipSetKey) (*abi.BitField, error)
+	// StateMinerInitialPledgeCollateral returns the precommit deposit for the specified miner's sector
+	StateMinerPreCommitDepositForPower(context.Context, address.Address, miner.SectorPreCommitInfo, types.TipSetKey) (types.BigInt, error)
 	// StateMinerInitialPledgeCollateral returns the initial pledge collateral for the specified miner's sector
 	StateMinerInitialPledgeCollateral(context.Context, address.Address, miner.SectorPreCommitInfo, types.TipSetKey) (types.BigInt, error)
 	// StateMinerAvailableBalance returns the portion of a miner's balance that can be withdrawn or spent
@@ -404,11 +411,11 @@ type SectorLocation struct {
 
 type ImportRes struct {
 	Root     cid.Cid
-	ImportID int
+	ImportID multistore.StoreID
 }
 
 type Import struct {
-	Key int
+	Key multistore.StoreID
 	Err string
 
 	Root     *cid.Cid
@@ -636,6 +643,7 @@ type MiningBaseInfo struct {
 	SectorSize      abi.SectorSize
 	PrevBeaconEntry types.BeaconEntry
 	BeaconEntries   []types.BeaconEntry
+	HasMinPower     bool
 }
 
 type BlockTemplate struct {
