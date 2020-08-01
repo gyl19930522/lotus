@@ -34,6 +34,7 @@ import (
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-multistore"
+	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/sector-storage/ffiwrapper"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -69,7 +70,8 @@ type API struct {
 
 	Imports dtypes.ClientImportMgr
 
-	RetBstore dtypes.ClientBlockstore // TODO: try to remove
+	CombinedBstore dtypes.ClientBlockstore // TODO: try to remove
+	RetrievalStoreMgr dtypes.ClientRetrievalStoreManager
 }
 
 func calcDealExpiration(minDuration uint64, md *miner.DeadlineInfo, startEpoch abi.ChainEpoch) abi.ChainEpoch {
@@ -450,13 +452,14 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 	if err != nil {
 		return xerrors.Errorf("Error in retrieval params: %s", err)
 	}
-	storeID, store, err := a.imgr().NewStore()
+
+	store, err := a.RetrievalStoreMgr.NewStore()
 	if err != nil {
 		return xerrors.Errorf("Error setting up new store: %w", err)
 	}
 
 	defer func() {
-		_ = a.imgr().Remove(storeID)
+		_ = a.RetrievalStoreMgr.ReleaseStore(store)
 	}()
 
 	_, err = a.Retrieval.Retrieve(
@@ -467,7 +470,8 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 		order.MinerPeerID,
 		order.Client,
 		order.Miner,
-		&storeID) // TODO: should we ignore storeID if we are using the IPFS blockstore?
+		store.StoreID())
+
 	if err != nil {
 		return xerrors.Errorf("Retrieve failed: %w", err)
 	}
@@ -487,27 +491,28 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 		return nil
 	}
 
+	rdag := store.DAGService()
+
 	if ref.IsCAR {
 		f, err := os.OpenFile(ref.Path, os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return err
 		}
-		err = car.WriteCar(ctx, store.DAG, []cid.Cid{order.Root}, f)
+		err = car.WriteCar(ctx, rdag, []cid.Cid{order.Root}, f)
 		if err != nil {
 			return err
 		}
 		return f.Close()
 	}
 
-	nd, err := store.DAG.Get(ctx, order.Root)
+	nd, err := rdag.Get(ctx, order.Root)
 	if err != nil {
 		return xerrors.Errorf("ClientRetrieve: %w", err)
 	}
-	file, err := unixfile.NewUnixfsFile(ctx, store.DAG, nd)
+	file, err := unixfile.NewUnixfsFile(ctx, rdag, nd)
 	if err != nil {
 		return xerrors.Errorf("ClientRetrieve: %w", err)
 	}
-
 	return files.WriteTo(file, ref.Path)
 }
 
@@ -551,6 +556,31 @@ func (a *API) ClientCalcCommP(ctx context.Context, inpath string, miner address.
 	return &api.CommPRet{
 		Root: commP,
 		Size: pieceSize,
+	}, nil
+}
+
+type lenWriter int64
+
+func (w *lenWriter) Write(p []byte) (n int, err error) {
+	*w += lenWriter(len(p))
+	return len(p), nil
+}
+
+func (a *API) ClientDealSize(ctx context.Context, root cid.Cid) (api.DataSize, error) {
+	dag := merkledag.NewDAGService(blockservice.New(a.CombinedBstore, offline.Exchange(a.CombinedBstore)))
+
+	w := lenWriter(0)
+
+	err := car.WriteCar(ctx, dag, []cid.Cid{root}, &w)
+	if err != nil {
+		return api.DataSize{}, err
+	}
+
+	up := padreader.PaddedSize(uint64(w))
+
+	return api.DataSize{
+		PayloadSize: int64(w),
+		PieceSize:   up.Padded(),
 	}, nil
 }
 

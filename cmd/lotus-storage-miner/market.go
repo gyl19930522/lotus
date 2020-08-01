@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -154,7 +153,12 @@ var setAskCmd = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.Uint64Flag{
 			Name:     "price",
-			Usage:    "Set the price of the ask (specified as FIL / GiB / Epoch) to `PRICE`",
+			Usage:    "Set the price of the ask for unverified deals (specified as FIL / GiB / Epoch) to `PRICE`",
+			Required: true,
+		},
+		&cli.Uint64Flag{
+			Name:     "verified-price",
+			Usage:    "Set the price of the ask for verified deals (specified as FIL / GiB / Epoch) to `PRICE`",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -185,6 +189,7 @@ var setAskCmd = &cli.Command{
 		defer closer()
 
 		pri := types.NewInt(cctx.Uint64("price"))
+		vpri := types.NewInt(cctx.Uint64("verified-price"))
 
 		dur, err := time.ParseDuration(cctx.String("duration"))
 		if err != nil {
@@ -227,7 +232,7 @@ var setAskCmd = &cli.Command{
 			return xerrors.Errorf("max piece size (w/bit-padding) %s cannot exceed miner sector size %s", types.SizeStr(types.NewInt(uint64(max))), types.SizeStr(types.NewInt(uint64(smax))))
 		}
 
-		return api.MarketSetAsk(ctx, pri, abi.ChainEpoch(qty), abi.PaddedPieceSize(min), abi.PaddedPieceSize(max))
+		return api.MarketSetAsk(ctx, pri, vpri, abi.ChainEpoch(qty), abi.PaddedPieceSize(min), abi.PaddedPieceSize(max))
 	},
 }
 
@@ -347,13 +352,24 @@ var dealsListCmd = &cli.Command{
 			return err
 		}
 
-		data, err := json.MarshalIndent(deals, "", "  ")
-		if err != nil {
-			return err
+		w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+
+		_, _ = fmt.Fprintf(w, "ProposalCid\tDealId\tState\tClient\tSize\tPrice\tDuration\n")
+
+		for _, deal := range deals {
+			pc, err := deal.Proposal.Cid()
+			if err != nil {
+				return err
+			}
+			propcid := pc.String()
+			propcid = "..." + propcid[len(propcid)-8:]
+
+			fil := types.FIL(types.BigMul(deal.Proposal.StoragePricePerEpoch, types.NewInt(uint64(deal.Proposal.Duration()))))
+
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%s\n", propcid, deal.DealID, storagemarket.DealStates[deal.State], deal.Proposal.Client, units.BytesSize(float64(deal.Proposal.PieceSize)), fil, deal.Proposal.Duration())
 		}
 
-		fmt.Println(string(data))
-		return nil
+		return w.Flush()
 	},
 }
 

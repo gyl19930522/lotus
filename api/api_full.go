@@ -227,6 +227,8 @@ type FullNode interface {
 	ClientCalcCommP(ctx context.Context, inpath string, miner address.Address) (*CommPRet, error)
 	// ClientGenCar generates a CAR file for the specified file.
 	ClientGenCar(ctx context.Context, ref FileRef, outpath string) error
+	// ClientDealSize calculates real deal data size
+	ClientDealSize(ctx context.Context, root cid.Cid) (DataSize, error)
 
 	// ClientUnimport removes references to the specified file from filestore
 	//ClientUnimport(path string)
@@ -329,6 +331,9 @@ type FullNode interface {
 	// Returns nil if there is no entry in the data cap table for the
 	// address.
 	StateVerifiedClientStatus(ctx context.Context, addr address.Address, tsk types.TipSetKey) (*verifreg.DataCap, error)
+	// StateDealProviderCollateralBounds returns the min and max collateral a storage provider
+	// can issue. It takes the deal size and verified status as parameters.
+	StateDealProviderCollateralBounds(context.Context, abi.PaddedPieceSize, bool, types.TipSetKey) (DealCollateralBounds, error)
 
 	// MethodGroup: Msig
 	// The Msig methods are used to interact with multisig wallets on the
@@ -635,6 +640,11 @@ type ComputeStateOutput struct {
 	Trace []*InvocResult
 }
 
+type DealCollateralBounds struct {
+	Min abi.TokenAmount
+	Max abi.TokenAmount
+}
+
 type MiningBaseInfo struct {
 	MinerPower      types.BigInt
 	NetworkPower    types.BigInt
@@ -656,6 +666,11 @@ type BlockTemplate struct {
 	Epoch            abi.ChainEpoch
 	Timestamp        uint64
 	WinningPoStProof []abi.PoStProof
+}
+
+type DataSize struct {
+	PayloadSize int64
+	PieceSize   abi.PaddedPieceSize
 }
 
 type CommPRet struct {

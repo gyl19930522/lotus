@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	samarket "github.com/filecoin-project/specs-actors/actors/builtin/market"
 	gruntime "runtime"
 	"time"
+
+	samarket "github.com/filecoin-project/specs-actors/actors/builtin/market"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -170,6 +171,8 @@ func (rt *Runtime) shimCall(f func() interface{}) (rval []byte, aerr aerrors.Act
 				aerr = ar
 				return
 			}
+			//log.Desugar().WithOptions(zap.AddStacktrace(zapcore.ErrorLevel)).
+			//Sugar().Errorf("spec actors failure: %s", r)
 			log.Errorf("spec actors failure: %s", r)
 			aerr = aerrors.Newf(1, "spec actors failure: %s", r)
 		}
@@ -459,7 +462,7 @@ func (ssh *shimStateHandle) Readonly(obj vmr.CBORUnmarshaler) {
 	ssh.rt.Get(act.Head, obj)
 }
 
-func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func() interface{}) interface{} {
+func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func()) {
 	if obj == nil {
 		ssh.rt.Abortf(exitcode.SysErrorIllegalActor, "Must not pass nil to Transaction()")
 	}
@@ -472,15 +475,13 @@ func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func() interface{}) in
 	ssh.rt.Get(baseState, obj)
 
 	ssh.rt.allowInternal = false
-	out := f()
+	f()
 	ssh.rt.allowInternal = true
 
 	c := ssh.rt.Put(obj)
 
 	// TODO: handle error below
 	ssh.rt.stateCommit(baseState, c)
-
-	return out
 }
 
 func (rt *Runtime) GetBalance(a address.Address) (types.BigInt, aerrors.ActorError) {

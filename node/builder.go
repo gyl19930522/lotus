@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"github.com/filecoin-project/lotus/markets/dealfilter"
 	"time"
 
 	logging "github.com/ipfs/go-log"
@@ -265,6 +266,7 @@ func Online() Option {
 			Override(new(dtypes.ClientDatastore), modules.NewClientDatastore),
 			Override(new(dtypes.ClientDataTransfer), modules.NewClientGraphsyncDataTransfer),
 			Override(new(dtypes.ClientRequestValidator), modules.NewClientRequestValidator),
+			Override(new(modules.ClientDealFunds), modules.NewClientDealFunds),
 			Override(new(storagemarket.StorageClient), modules.StorageClient),
 			Override(new(storagemarket.StorageClientNode), storageadapter.NewClientNodeAdapter),
 			Override(RegisterClientValidatorKey, modules.RegisterClientValidator),
@@ -308,6 +310,8 @@ func Online() Option {
 			Override(new(dtypes.ProviderRequestValidator), modules.NewProviderRequestValidator),
 			Override(new(dtypes.ProviderPieceStore), modules.NewProviderPieceStore),
 			Override(new(*storedask.StoredAsk), modules.NewStorageAsk),
+			Override(new(dtypes.DealFilter), modules.BasicDealFilter(nil)),
+			Override(new(modules.ProviderDealFunds), modules.NewProviderDealFunds),
 			Override(new(storagemarket.StorageProvider), modules.StorageProvider),
 			Override(new(storagemarket.StorageProviderNode), storageadapter.NewProviderNodeAdapter),
 			Override(RegisterProviderValidatorKey, modules.RegisterProviderValidator),
@@ -402,11 +406,13 @@ func ConfigFullNode(c interface{}) Option {
 	}
 
 	ipfsMaddr := cfg.Client.IpfsMAddr
-	useForRetrieval := cfg.Client.IpfsUseForRetrieval
 	return Options(
 		ConfigCommon(&cfg.Common),
 		If(cfg.Client.UseIpfs,
-			Override(new(dtypes.ClientBlockstore), modules.IpfsClientBlockstore(ipfsMaddr, useForRetrieval)),
+			Override(new(dtypes.ClientBlockstore), modules.IpfsClientBlockstore(ipfsMaddr)),
+			If(cfg.Client.IpfsUseForRetrieval,
+				Override(new(dtypes.ClientRetrievalStoreManager), modules.ClientBlockstoreRetrievalStoreManager),
+			),
 		),
 		If(cfg.Metrics.HeadNotifs,
 			Override(HeadMetricsKey, metrics.SendHeadNotifs(cfg.Metrics.Nickname)),
@@ -422,6 +428,10 @@ func ConfigStorageMiner(c interface{}) Option {
 
 	return Options(
 		ConfigCommon(&cfg.Common),
+
+		If(cfg.Dealmaking.Filter != "",
+			Override(new(dtypes.DealFilter), modules.BasicDealFilter(dealfilter.CliDealFilter(cfg.Dealmaking.Filter))),
+		),
 
 		Override(new(sectorstorage.SealerConfig), cfg.Storage),
 	)
@@ -448,7 +458,7 @@ func Repo(r repo.Repo) Option {
 			Override(new(dtypes.ClientMultiDstore), modules.ClientMultiDatastore),
 
 			Override(new(dtypes.ClientBlockstore), modules.ClientBlockstore),
-
+			Override(new(dtypes.ClientRetrievalStoreManager), modules.ClientRetrievalStoreManager),
 			Override(new(ci.PrivKey), lp2p.PrivKey),
 			Override(new(ci.PubKey), ci.PrivKey.GetPublic),
 			Override(new(peer.ID), peer.IDFromPublicKey),

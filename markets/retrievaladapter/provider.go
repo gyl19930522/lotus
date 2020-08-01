@@ -2,13 +2,13 @@ package retrievaladapter
 
 import (
 	"context"
-	"github.com/filecoin-project/sector-storage/storiface"
 	"io"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	sectorstorage "github.com/filecoin-project/sector-storage"
+	"github.com/filecoin-project/sector-storage/storiface"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/builtin/paych"
 
@@ -39,8 +39,8 @@ func (rpn *retrievalProviderNode) GetMinerWorkerAddress(ctx context.Context, min
 	return mi.Worker, err
 }
 
-func (rpn *retrievalProviderNode) UnsealSector(ctx context.Context, sectorID uint64, offset uint64, length uint64) (io.ReadCloser, error) {
-	si, err := rpn.miner.GetSectorInfo(abi.SectorNumber(sectorID))
+func (rpn *retrievalProviderNode) UnsealSector(ctx context.Context, sectorID abi.SectorNumber, offset abi.UnpaddedPieceSize, length abi.UnpaddedPieceSize) (io.ReadCloser, error) {
+	si, err := rpn.miner.GetSectorInfo(sectorID)
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +52,12 @@ func (rpn *retrievalProviderNode) UnsealSector(ctx context.Context, sectorID uin
 
 	sid := abi.SectorID{
 		Miner:  abi.ActorID(mid),
-		Number: abi.SectorNumber(sectorID),
+		Number: sectorID,
 	}
 
 	r, w := io.Pipe()
 	go func() {
-		err := rpn.sealer.ReadPiece(ctx, w, sid, storiface.UnpaddedByteIndex(offset), abi.UnpaddedPieceSize(length), si.TicketValue, *si.CommD)
+		err := rpn.sealer.ReadPiece(ctx, w, sid, storiface.UnpaddedByteIndex(offset), length, si.TicketValue, *si.CommD)
 		_ = w.CloseWithError(err)
 	}()
 
