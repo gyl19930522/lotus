@@ -178,14 +178,13 @@ var runCmd = &cli.Command{
 			continue
 		}
 
-
 		// Connect to storage-miner
 		/*
 
-		nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
-		if err != nil {
-			return xerrors.Errorf("getting miner api: %w", err)
-		}
+			nodeApi, closer, err := lcli.GetStorageMinerAPI(cctx)
+			if err != nil {
+				return xerrors.Errorf("getting miner api: %w", err)
+			}
 		*/
 		defer closer()
 		ctx := lcli.ReqContext(cctx)
@@ -396,13 +395,20 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("symlink '%s' to '%s': %w", cachePath, mutualCachePath, err)
 		}
 
-		mutualSectorPath := filepath.Join(cctx.String("minerActualRepoPath"), "mutual-sector")
+		minerActualRepoPath := cctx.String("minerActualRepoPath")
+		minerActualRepoPathFileInMutualPath := filepath.Join(mutualPath, "minerActualRepoPath")
+		err = ioutil.WriteFile(minerActualRepoPathFileInMutualPath, []byte(minerActualRepoPath), 0777)
+
+		minerActualRepoPathFile := filepath.Join(repoPath, "minerActualRepoPath")
+		err = ioutil.WriteFile(minerActualRepoPathFile, []byte(minerActualRepoPath), 0777)
+
+		mutualSectorPath := filepath.Join(minerActualRepoPath, "mutual-sector")
 		if _, err := os.Stat(mutualSectorPath); err == nil {
 			localPath, err := homedir.Expand("~/lotus_local_data")
 			if err != nil {
 				return err
 			}
-			localStagedPath := filepath.Join(localPath, "/mutual-sector")
+			localStagedPath := filepath.Join(localPath, "mutual-sector")
 			if _, err := os.Stat(localStagedPath); err != nil {
 				if !os.IsNotExist(err) {
 					return xerrors.Errorf("stat mutual sector: %w", err)
