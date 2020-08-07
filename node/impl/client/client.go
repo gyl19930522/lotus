@@ -33,6 +33,8 @@ import (
 	rm "github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-multistore"
+	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/sector-storage/ffiwrapper"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -51,7 +53,7 @@ import (
 
 var DefaultHashFunction = uint64(mh.BLAKE2B_MIN + 31)
 
-const dealStartBuffer abi.ChainEpoch = 10000 // TODO: allow setting
+const dealStartBufferHours uint64 = 24
 
 type API struct {
 	fx.In
@@ -68,7 +70,8 @@ type API struct {
 
 	Imports dtypes.ClientImportMgr
 
-	RetBstore dtypes.ClientBlockstore // TODO: try to remove
+	CombinedBstore    dtypes.ClientBlockstore // TODO: try to remove
+	RetrievalStoreMgr dtypes.ClientRetrievalStoreManager
 }
 
 func calcDealExpiration(minDuration uint64, md *miner.DeadlineInfo, startEpoch abi.ChainEpoch) abi.ChainEpoch {
@@ -84,6 +87,27 @@ func (a *API) imgr() *importmgr.Mgr {
 }
 
 func (a *API) ClientStartDeal(ctx context.Context, params *api.StartDealParams) (*cid.Cid, error) {
+	var storeID *multistore.StoreID
+	if params.Data.TransferType == storagemarket.TTGraphsync {
+		importIDs := a.imgr().List()
+		for _, importID := range importIDs {
+			info, err := a.imgr().Info(importID)
+			if err != nil {
+				continue
+			}
+			if info.Labels[importmgr.LRootCid] == "" {
+				continue
+			}
+			c, err := cid.Parse(info.Labels[importmgr.LRootCid])
+			if err != nil {
+				continue
+			}
+			if c.Equals(params.Data.Root) {
+				storeID = &importID
+				break
+			}
+		}
+	}
 	exist, err := a.WalletHas(ctx, params.Wallet)
 	if err != nil {
 		return nil, xerrors.Errorf("failed getting addr from wallet: %w", params.Wallet)
@@ -129,22 +153,23 @@ func (a *API) ClientStartDeal(ctx context.Context, params *api.StartDealParams) 
 			return nil, xerrors.Errorf("failed getting chain height: %w", err)
 		}
 
-		dealStart = ts.Height() + dealStartBuffer
+		blocksPerHour := 60 * 60 / build.BlockDelaySecs
+		dealStart = ts.Height() + abi.ChainEpoch(dealStartBufferHours*blocksPerHour)
 	}
 
-	result, err := a.SMDealClient.ProposeStorageDeal(
-		ctx,
-		params.Wallet,
-		&providerInfo,
-		params.Data,
-		dealStart,
-		calcDealExpiration(params.MinBlocksDuration, md, dealStart),
-		params.EpochPrice,
-		big.Zero(),
-		rt,
-		params.FastRetrieval,
-		params.VerifiedDeal,
-	)
+	result, err := a.SMDealClient.ProposeStorageDeal(ctx, storagemarket.ProposeStorageDealParams{
+		Addr:          params.Wallet,
+		Info:          &providerInfo,
+		Data:          params.Data,
+		StartEpoch:    dealStart,
+		EndEpoch:      calcDealExpiration(params.MinBlocksDuration, md, dealStart),
+		Price:         params.EpochPrice,
+		Collateral:    big.Zero(),
+		Rt:            rt,
+		FastRetrieval: params.FastRetrieval,
+		VerifiedDeal:  params.VerifiedDeal,
+		StoreID:       storeID,
+	})
 
 	if err != nil {
 		return nil, xerrors.Errorf("failed to start deal: %w", err)
@@ -299,7 +324,7 @@ func (a *API) ClientImport(ctx context.Context, ref api.FileRef) (*api.ImportRes
 	}, nil
 }
 
-func (a *API) ClientRemoveImport(ctx context.Context, importID int) error {
+func (a *API) ClientRemoveImport(ctx context.Context, importID multistore.StoreID) error {
 	return a.imgr().Remove(importID)
 }
 
@@ -339,6 +364,9 @@ func (a *API) ClientImportLocal(ctx context.Context, f io.Reader) (cid.Cid, erro
 	nd, err := balanced.Layout(db)
 	if err != nil {
 		return cid.Undef, err
+	}
+	if err := a.imgr().AddLabel(id, "root", nd.Cid().String()); err != nil {
+		return cid.Cid{}, err
 	}
 
 	return nd.Cid(), bufferedDS.Commit()
@@ -424,6 +452,16 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 	if err != nil {
 		return xerrors.Errorf("Error in retrieval params: %s", err)
 	}
+
+	store, err := a.RetrievalStoreMgr.NewStore()
+	if err != nil {
+		return xerrors.Errorf("Error setting up new store: %w", err)
+	}
+
+	defer func() {
+		_ = a.RetrievalStoreMgr.ReleaseStore(store)
+	}()
+
 	_, err = a.Retrieval.Retrieve(
 		ctx,
 		order.Root,
@@ -431,7 +469,9 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 		order.Total,
 		order.MinerPeerID,
 		order.Client,
-		order.Miner) // TODO: pass the store here   somehow
+		order.Miner,
+		store.StoreID())
+
 	if err != nil {
 		return xerrors.Errorf("Retrieve failed: %w", err)
 	}
@@ -451,7 +491,7 @@ func (a *API) ClientRetrieve(ctx context.Context, order api.RetrievalOrder, ref 
 		return nil
 	}
 
-	rdag := merkledag.NewDAGService(blockservice.New(a.RetBstore, offline.Exchange(a.RetBstore)))
+	rdag := store.DAGService()
 
 	if ref.IsCAR {
 		f, err := os.OpenFile(ref.Path, os.O_CREATE|os.O_WRONLY, 0644)
@@ -519,6 +559,31 @@ func (a *API) ClientCalcCommP(ctx context.Context, inpath string, miner address.
 	}, nil
 }
 
+type lenWriter int64
+
+func (w *lenWriter) Write(p []byte) (n int, err error) {
+	*w += lenWriter(len(p))
+	return len(p), nil
+}
+
+func (a *API) ClientDealSize(ctx context.Context, root cid.Cid) (api.DataSize, error) {
+	dag := merkledag.NewDAGService(blockservice.New(a.CombinedBstore, offline.Exchange(a.CombinedBstore)))
+
+	w := lenWriter(0)
+
+	err := car.WriteCar(ctx, dag, []cid.Cid{root}, &w)
+	if err != nil {
+		return api.DataSize{}, err
+	}
+
+	up := padreader.PaddedSize(uint64(w))
+
+	return api.DataSize{
+		PayloadSize: int64(w),
+		PieceSize:   up.Padded(),
+	}, nil
+}
+
 func (a *API) ClientGenCar(ctx context.Context, ref api.FileRef, outputPath string) error {
 	id, st, err := a.imgr().NewStore()
 	if err != nil {
@@ -556,7 +621,7 @@ func (a *API) ClientGenCar(ctx context.Context, ref api.FileRef, outputPath stri
 	return f.Close()
 }
 
-func (a *API) clientImport(ctx context.Context, ref api.FileRef, store *importmgr.Store) (cid.Cid, error) {
+func (a *API) clientImport(ctx context.Context, ref api.FileRef, store *multistore.Store) (cid.Cid, error) {
 	f, err := os.Open(ref.Path)
 	if err != nil {
 		return cid.Undef, err

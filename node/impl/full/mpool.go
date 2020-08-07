@@ -87,8 +87,8 @@ func (a *MpoolAPI) MpoolPush(ctx context.Context, smsg *types.SignedMessage) (ci
 	return a.Mpool.Push(smsg)
 }
 
-// GasMargin sets by how much should gas limit be increased over test execution
-var GasMargin = 1.2
+// GasMargin sets by how much should gas used be increased over test execution
+var GasMargin = 1.5
 
 func (a *MpoolAPI) MpoolPushMessage(ctx context.Context, msg *types.Message) (*types.SignedMessage, error) {
 	if msg.Nonce != 0 {
@@ -97,7 +97,7 @@ func (a *MpoolAPI) MpoolPushMessage(ctx context.Context, msg *types.Message) (*t
 	if msg.GasLimit == 0 {
 		gasLimit, err := a.GasEstimateGasLimit(ctx, msg, types.TipSetKey{})
 		if err != nil {
-			return nil, xerrors.Errorf("estimating gas limit: %w", err)
+			return nil, xerrors.Errorf("estimating gas used: %w", err)
 		}
 		msg.GasLimit = int64(float64(gasLimit) * GasMargin)
 	}

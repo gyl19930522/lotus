@@ -111,7 +111,7 @@ var runCmd = &cli.Command{
 		&cli.StringFlag{
 			Name:  "address",
 			Usage: "locally reachable address",
-			Value: "0.0.0.0",
+			Value: "0.0.0.0:3456",
 		},
 		&cli.BoolFlag{
 			Name:  "no-local-storage",
@@ -131,6 +131,11 @@ var runCmd = &cli.Command{
 			Name:  "commit",
 			Usage: "enable commit (32G sectors: all cores or GPUs, 128GiB Memory + 64GiB swap)",
 			Value: true,
+		},
+		&cli.IntFlag{
+			Name:  "parallel-fetch-limit",
+			Usage: "maximum fetch operations to run in parallel",
+			Value: 5,
 		},
 		&cli.StringFlag{
 			Name:  "timeout",
@@ -418,7 +423,7 @@ var runCmd = &cli.Command{
 			return xerrors.Errorf("could not get api info: %w", err)
 		}
 
-		remote := stores.NewRemote(localStore, nodeApi, sminfo.AuthHeader())
+		remote := stores.NewRemote(localStore, nodeApi, sminfo.AuthHeader(), cctx.Int("parallel-fetch-limit"))
 
 		// Create / expose the worker
 
@@ -507,7 +512,11 @@ func watchMinerConn(ctx context.Context, cctx *cli.Context, nodeApi api.StorageM
 
 		// TODO: there are probably cleaner/more graceful ways to restart,
 		//  but this is good enough for now (FSM can recover from the mess this creates)
-		if err := syscall.Exec(exe, []string{exe, "run",
+		if err := syscall.Exec(exe, []string{exe,
+			fmt.Sprintf("--worker-repo=%s", cctx.String("worker-repo")),
+			fmt.Sprintf("--miner-repo=%s", cctx.String("miner-repo")),
+			fmt.Sprintf("--enable-gpu-proving=%t", cctx.Bool("enable-gpu-proving")),
+			"run",
 			fmt.Sprintf("--address=%s", cctx.String("address")),
 			fmt.Sprintf("--no-local-storage=%t", cctx.Bool("no-local-storage")),
 			fmt.Sprintf("--precommit1=%t", cctx.Bool("precommit1")),

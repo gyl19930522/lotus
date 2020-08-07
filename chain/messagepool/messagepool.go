@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/ipfs/go-cid"
@@ -28,6 +29,7 @@ import (
 	"github.com/filecoin-project/lotus/build"
 	"github.com/filecoin-project/lotus/chain/stmgr"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/chain/vm"
 	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 
@@ -39,6 +41,11 @@ var log = logging.Logger("messagepool")
 const futureDebug = false
 
 const ReplaceByFeeRatio = 1.25
+
+const repubMsgLimit = 5
+
+var MemPoolSizeLimitHiDefault = 30000
+var MemPoolSizeLimitLoDefault = 20000
 
 var (
 	rbfNum   = types.NewInt(uint64((ReplaceByFeeRatio - 1) * 256))
@@ -82,7 +89,12 @@ type MessagePool struct {
 
 	minGasPrice types.BigInt
 
-	maxTxPoolSize int
+	currentSize     int
+	maxTxPoolSizeHi int
+	maxTxPoolSizeLo int
+
+	// pruneTrigger is a channel used to trigger a mempool pruning
+	pruneTrigger chan struct{}
 
 	blsSigCache *lru.TwoQueueCache
 
@@ -106,7 +118,7 @@ func newMsgSet() *msgSet {
 	}
 }
 
-func (ms *msgSet) add(m *types.SignedMessage) error {
+func (ms *msgSet) add(m *types.SignedMessage) (bool, error) {
 	if len(ms.msgs) == 0 || m.Message.Nonce >= ms.nextNonce {
 		ms.nextNonce = m.Message.Nonce + 1
 	}
@@ -122,7 +134,7 @@ func (ms *msgSet) add(m *types.SignedMessage) error {
 					"newprice", m.Message.GasPrice, "addr", m.Message.From, "nonce", m.Message.Nonce)
 			} else {
 				log.Info("add with duplicate nonce")
-				return xerrors.Errorf("message from %s with nonce %d already in mpool,"+
+				return false, xerrors.Errorf("message from %s with nonce %d already in mpool,"+
 					" increase GasPrice to %s from %s to trigger replace by fee",
 					m.Message.From, m.Message.Nonce, minPrice, m.Message.GasPrice)
 			}
@@ -130,7 +142,7 @@ func (ms *msgSet) add(m *types.SignedMessage) error {
 	}
 	ms.msgs[m.Message.Nonce] = m
 
-	return nil
+	return !has, nil
 }
 
 type Provider interface {
@@ -192,25 +204,27 @@ func New(api Provider, ds dtypes.MetadataDS, netName dtypes.NetworkName) (*Messa
 	verifcache, _ := lru.New2Q(build.VerifSigCacheSize)
 
 	mp := &MessagePool{
-		closer:        make(chan struct{}),
-		repubTk:       build.Clock.Ticker(time.Duration(build.BlockDelaySecs) * 10 * time.Second),
-		localAddrs:    make(map[address.Address]struct{}),
-		pending:       make(map[address.Address]*msgSet),
-		minGasPrice:   types.NewInt(0),
-		maxTxPoolSize: 5000,
-		blsSigCache:   cache,
-		sigValCache:   verifcache,
-		changes:       lps.New(50),
-		localMsgs:     namespace.Wrap(ds, datastore.NewKey(localMsgsDs)),
-		api:           api,
-		netName:       netName,
+		closer:          make(chan struct{}),
+		repubTk:         build.Clock.Ticker(time.Duration(build.BlockDelaySecs) * 10 * time.Second),
+		localAddrs:      make(map[address.Address]struct{}),
+		pending:         make(map[address.Address]*msgSet),
+		minGasPrice:     types.NewInt(0),
+		maxTxPoolSizeHi: MemPoolSizeLimitHiDefault,
+		maxTxPoolSizeLo: MemPoolSizeLimitLoDefault,
+		pruneTrigger:    make(chan struct{}, 1),
+		blsSigCache:     cache,
+		sigValCache:     verifcache,
+		changes:         lps.New(50),
+		localMsgs:       namespace.Wrap(ds, datastore.NewKey(localMsgsDs)),
+		api:             api,
+		netName:         netName,
 	}
 
 	if err := mp.loadLocal(); err != nil {
 		log.Errorf("loading local messages: %+v", err)
 	}
 
-	go mp.repubLocal()
+	go mp.runLoop()
 
 	mp.curTs = api.SubscribeHeadChanges(func(rev, app []*types.TipSet) error {
 		err := mp.HeadChange(rev, app)
@@ -228,7 +242,17 @@ func (mp *MessagePool) Close() error {
 	return nil
 }
 
-func (mp *MessagePool) repubLocal() {
+func (mp *MessagePool) Prune() {
+	//so, its a single slot buffered channel. The first send fills the channel,
+	//the second send goes through when the pruning starts,
+	//and the third send goes through (and noops) after the pruning finishes
+	//and goes through the loop again
+	mp.pruneTrigger <- struct{}{}
+	mp.pruneTrigger <- struct{}{}
+	mp.pruneTrigger <- struct{}{}
+}
+
+func (mp *MessagePool) runLoop() {
 	for {
 		select {
 		case <-mp.repubTk.C:
@@ -269,6 +293,10 @@ func (mp *MessagePool) repubLocal() {
 				log.Infow("republishing local messages", "n", len(outputMsgs))
 			}
 
+			if len(outputMsgs) > repubMsgLimit {
+				outputMsgs = outputMsgs[:repubMsgLimit]
+			}
+
 			for _, msg := range outputMsgs {
 				msgb, err := msg.Serialize()
 				if err != nil {
@@ -285,6 +313,10 @@ func (mp *MessagePool) repubLocal() {
 
 			if errout != nil {
 				log.Errorf("errors while republishing: %+v", errout)
+			}
+		case <-mp.pruneTrigger:
+			if err := mp.pruneExcessMessages(); err != nil {
+				log.Errorf("failed to prune excess messages from mempool: %s", err)
 			}
 		case <-mp.closer:
 			mp.repubTk.Stop()
@@ -304,7 +336,23 @@ func (mp *MessagePool) addLocal(m *types.SignedMessage, msgb []byte) error {
 	return nil
 }
 
+func (mp *MessagePool) verifyMsgBeforePush(m *types.SignedMessage, epoch abi.ChainEpoch) error {
+	minGas := vm.PricelistByEpoch(epoch).OnChainMessage(m.ChainLength())
+
+	if err := m.VMMessage().ValidForBlockInclusion(minGas.Total()); err != nil {
+		return xerrors.Errorf("message will not be included in a block: %w", err)
+	}
+	return nil
+}
+
 func (mp *MessagePool) Push(m *types.SignedMessage) (cid.Cid, error) {
+	mp.curTsLk.Lock()
+	epoch := mp.curTs.Height()
+	mp.curTsLk.Unlock()
+	if err := mp.verifyMsgBeforePush(m, epoch); err != nil {
+		return cid.Undef, err
+	}
+
 	msgb, err := m.Serialize()
 	if err != nil {
 		return cid.Undef, err
@@ -442,8 +490,21 @@ func (mp *MessagePool) addLocked(m *types.SignedMessage) error {
 		mp.pending[m.Message.From] = mset
 	}
 
-	if err := mset.add(m); err != nil {
+	incr, err := mset.add(m)
+	if err != nil {
 		log.Info(err)
+		return err // TODO(review): this error return was dropped at some point, was it on purpose?
+	}
+
+	if incr {
+		mp.currentSize++
+		if mp.currentSize > mp.maxTxPoolSizeHi {
+			// send signal to prune messages if it hasnt already been sent
+			select {
+			case mp.pruneTrigger <- struct{}{}:
+			default:
+			}
+		}
 	}
 
 	mp.changes.Pub(api.MpoolUpdate{
@@ -553,6 +614,10 @@ func (mp *MessagePool) PushWithNonce(ctx context.Context, addr address.Address, 
 		return nil, err
 	}
 
+	if err := mp.verifyMsgBeforePush(msg, mp.curTs.Height()); err != nil {
+		return nil, err
+	}
+
 	msgb, err := msg.Serialize()
 	if err != nil {
 		return nil, err
@@ -572,6 +637,10 @@ func (mp *MessagePool) Remove(from address.Address, nonce uint64) {
 	mp.lk.Lock()
 	defer mp.lk.Unlock()
 
+	mp.remove(from, nonce)
+}
+
+func (mp *MessagePool) remove(from address.Address, nonce uint64) {
 	mset, ok := mp.pending[from]
 	if !ok {
 		return
@@ -582,6 +651,8 @@ func (mp *MessagePool) Remove(from address.Address, nonce uint64) {
 			Type:    api.MpoolRemove,
 			Message: m,
 		}, localUpdates)
+
+		mp.currentSize--
 	}
 
 	// NB: This deletes any message with the given nonce. This makes sense

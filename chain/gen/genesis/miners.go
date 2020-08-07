@@ -56,7 +56,11 @@ func mkFakedSigSyscalls(base vm.SyscallBuilder) vm.SyscallBuilder {
 }
 
 func SetupStorageMiners(ctx context.Context, cs *store.ChainStore, sroot cid.Cid, miners []genesis.Miner) (cid.Cid, error) {
-	vm, err := vm.NewVM(sroot, 0, &fakeRand{}, cs.Blockstore(), mkFakedSigSyscalls(cs.VMSys()))
+	vc := func(context.Context, abi.ChainEpoch) (abi.TokenAmount, error) {
+		return big.Zero(), nil
+	}
+
+	vm, err := vm.NewVM(sroot, 0, &fakeRand{}, cs.Blockstore(), mkFakedSigSyscalls(cs.VMSys()), vc)
 	if err != nil {
 		return cid.Undef, xerrors.Errorf("failed to create NewVM: %w", err)
 	}
@@ -118,16 +122,9 @@ func SetupStorageMiners(ctx context.Context, cs *store.ChainStore, sroot cid.Cid
 
 		// Add market funds
 
-		{
+		if m.MarketBalance.GreaterThan(big.Zero()) {
 			params := mustEnc(&minerInfos[i].maddr)
 			_, err := doExecValue(ctx, vm, builtin.StorageMarketActorAddr, m.Worker, m.MarketBalance, builtin.MethodsMarket.AddBalance, params)
-			if err != nil {
-				return cid.Undef, xerrors.Errorf("failed to create genesis miner: %w", err)
-			}
-		}
-		{
-			params := mustEnc(&m.Worker)
-			_, err := doExecValue(ctx, vm, builtin.StorageMarketActorAddr, m.Worker, big.Zero(), builtin.MethodsMarket.AddBalance, params)
 			if err != nil {
 				return cid.Undef, xerrors.Errorf("failed to create genesis miner: %w", err)
 			}
@@ -254,7 +251,15 @@ func SetupStorageMiners(ctx context.Context, cs *store.ChainStore, sroot cid.Cid
 					return cid.Undef, xerrors.Errorf("getting current total power: %w", err)
 				}
 
-				pledge := miner.InitialPledgeForPower(sectorWeight, tpow.QualityAdjPower, epochReward.ThisEpochBaselinePower, tpow.PledgeCollateral, epochReward.ThisEpochReward, circSupply(ctx, vm, minerInfos[i].maddr))
+				pledge := miner.InitialPledgeForPower(
+					sectorWeight,
+					epochReward.ThisEpochBaselinePower,
+					tpow.PledgeCollateral,
+					epochReward.ThisEpochRewardSmoothed,
+					tpow.QualityAdjPowerSmoothed,
+					circSupply(ctx, vm, minerInfos[i].maddr),
+				)
+
 				fmt.Println(types.FIL(pledge))
 				_, err = doExecValue(ctx, vm, minerInfos[i].maddr, m.Worker, pledge, builtin.MethodsMiner.PreCommitSector, mustEnc(params))
 				if err != nil {

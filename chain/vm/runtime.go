@@ -8,6 +8,8 @@ import (
 	gruntime "runtime"
 	"time"
 
+	samarket "github.com/filecoin-project/specs-actors/actors/builtin/market"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/abi/big"
@@ -60,11 +62,20 @@ type Runtime struct {
 }
 
 func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
-	total := types.FromFil(build.TotalFilecoin)
+
+	filVested, err := rt.vm.GetVestedFunds(rt.ctx)
+	if err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get vested funds for computing total supply: %s", err)
+	}
 
 	rew, err := rt.state.GetActor(builtin.RewardActorAddr)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get reward actor for computing total supply: %s", err)
+	}
+
+	filMined := types.BigSub(types.FromFil(build.FilAllocStorageMining), rew.Balance)
+	if filMined.LessThan(big.Zero()) {
+		filMined = big.Zero()
 	}
 
 	burnt, err := rt.state.GetActor(builtin.BurntFundsActorAddr)
@@ -72,26 +83,41 @@ func (rt *Runtime) TotalFilCircSupply() abi.TokenAmount {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get reward actor for computing total supply: %s", err)
 	}
 
+	filBurned := burnt.Balance
+
 	market, err := rt.state.GetActor(builtin.StorageMarketActorAddr)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get reward actor for computing total supply: %s", err)
 	}
+
+	var mst samarket.State
+	if err := rt.cst.Get(rt.ctx, market.Head, &mst); err != nil {
+		rt.Abortf(exitcode.ErrIllegalState, "failed to get market state: %s", err)
+	}
+
+	filMarketLocked := types.BigAdd(mst.TotalClientLockedCollateral, mst.TotalProviderLockedCollateral)
+	filMarketLocked = types.BigAdd(filMarketLocked, mst.TotalClientStorageFee)
 
 	power, err := rt.state.GetActor(builtin.StoragePowerActorAddr)
 	if err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get reward actor for computing total supply: %s", err)
 	}
 
-	total = types.BigSub(total, rew.Balance)
-	total = types.BigSub(total, burnt.Balance)
-	total = types.BigSub(total, market.Balance)
-
-	var st sapower.State
-	if err := rt.cst.Get(rt.ctx, power.Head, &st); err != nil {
+	var pst sapower.State
+	if err := rt.cst.Get(rt.ctx, power.Head, &pst); err != nil {
 		rt.Abortf(exitcode.ErrIllegalState, "failed to get storage power state: %s", err)
 	}
 
-	return types.BigSub(total, st.TotalPledgeCollateral)
+	filLocked := types.BigAdd(filMarketLocked, pst.TotalPledgeCollateral)
+
+	ret := types.BigAdd(filVested, filMined)
+	ret = types.BigSub(ret, filBurned)
+	ret = types.BigSub(ret, filLocked)
+
+	if ret.LessThan(big.Zero()) {
+		ret = big.Zero()
+	}
+	return ret
 }
 
 func (rt *Runtime) ResolveAddress(addr address.Address) (ret address.Address, ok bool) {
@@ -145,6 +171,8 @@ func (rt *Runtime) shimCall(f func() interface{}) (rval []byte, aerr aerrors.Act
 				aerr = ar
 				return
 			}
+			//log.Desugar().WithOptions(zap.AddStacktrace(zapcore.ErrorLevel)).
+			//Sugar().Errorf("spec actors failure: %s", r)
 			log.Errorf("spec actors failure: %s", r)
 			aerr = aerrors.Newf(1, "spec actors failure: %s", r)
 		}
@@ -434,7 +462,7 @@ func (ssh *shimStateHandle) Readonly(obj vmr.CBORUnmarshaler) {
 	ssh.rt.Get(act.Head, obj)
 }
 
-func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func() interface{}) interface{} {
+func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func()) {
 	if obj == nil {
 		ssh.rt.Abortf(exitcode.SysErrorIllegalActor, "Must not pass nil to Transaction()")
 	}
@@ -447,15 +475,13 @@ func (ssh *shimStateHandle) Transaction(obj vmr.CBORer, f func() interface{}) in
 	ssh.rt.Get(baseState, obj)
 
 	ssh.rt.allowInternal = false
-	out := f()
+	f()
 	ssh.rt.allowInternal = true
 
 	c := ssh.rt.Put(obj)
 
 	// TODO: handle error below
 	ssh.rt.stateCommit(baseState, c)
-
-	return out
 }
 
 func (rt *Runtime) GetBalance(a address.Address) (types.BigInt, aerrors.ActorError) {

@@ -49,14 +49,17 @@ var (
 	TicketRandomnessLookback     = abi.ChainEpoch(1)
 	WinningPoStSectorSetLookback = abi.ChainEpoch(10)
 
-	TotalFilecoin     uint64 = 2_000_000_000
-	MiningRewardTotal uint64 = 1_400_000_000
+	FilBase               uint64 = 2_000_000_000
+	FilAllocStorageMining uint64 = 1_400_000_000
 
 	FilecoinPrecision uint64 = 1_000_000_000_000_000_000
 
 	InitialRewardBalance = func() *big.Int {
-		v := big.NewInt(int64(MiningRewardTotal))
+		v := big.NewInt(int64(FilAllocStorageMining))
 		v = v.Mul(v, big.NewInt(int64(FilecoinPrecision)))
 		return v
 	}()
+	// Actor consts
+	// TODO: Pull from actors when its made not private
+	MinDealDuration = abi.ChainEpoch(180 * builtin.EpochsInDay)
 )

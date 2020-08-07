@@ -3,15 +3,19 @@ package impl
 import (
 	"context"
 	"encoding/json"
-	"github.com/filecoin-project/sector-storage/fsutil"
-	"github.com/ipfs/go-cid"
-	"golang.org/x/xerrors"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/filecoin-project/sector-storage/fsutil"
+	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	"github.com/ipfs/go-cid"
+	"golang.org/x/xerrors"
+
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-fil-markets/piecestore"
+	retrievalmarket "github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	storagemarket "github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-jsonrpc/auth"
 	sectorstorage "github.com/filecoin-project/sector-storage"
@@ -37,11 +41,13 @@ type StorageMinerAPI struct {
 	ProofsConfig *ffiwrapper.Config
 	SectorBlocks *sectorblocks.SectorBlocks
 
-	StorageProvider storagemarket.StorageProvider
-	Miner           *storage.Miner
-	BlockMiner      *miner.Miner
-	Full            api.FullNode
-	StorageMgr      *sectorstorage.Manager `optional:"true"`
+	PieceStore        dtypes.ProviderPieceStore
+	StorageProvider   storagemarket.StorageProvider
+	RetrievalProvider retrievalmarket.RetrievalProvider
+	Miner             *storage.Miner
+	BlockMiner        *miner.Miner
+	Full              api.FullNode
+	StorageMgr        *sectorstorage.Manager `optional:"true"`
 	*stores.Index
 
 	ConsiderOnlineStorageDealsConfigFunc       dtypes.ConsiderOnlineStorageDealsConfigFunc
@@ -106,7 +112,7 @@ func (sm *StorageMinerAPI) MutualSector(ctx context.Context, storageRepoPath str
 	return sm.Miner.MutualSector(storageRepoPath)
 }
 
-func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber) (api.SectorInfo, error) {
+func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumber, showOnChainInfo bool) (api.SectorInfo, error) {
 	info, err := sm.Miner.GetSectorInfo(sid)
 	if err != nil {
 		return api.SectorInfo{}, err
@@ -130,7 +136,7 @@ func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumb
 		}
 	}
 
-	return api.SectorInfo{
+	sInfo := api.SectorInfo{
 		SectorID: sid,
 		State:    api.SectorState(info.State),
 		CommD:    info.CommD,
@@ -149,7 +155,40 @@ func (sm *StorageMinerAPI) SectorsStatus(ctx context.Context, sid abi.SectorNumb
 
 		LastErr: info.LastErr,
 		Log:     log,
-	}, nil
+		// on chain info
+		SealProof:          0,
+		Activation:         0,
+		Expiration:         0,
+		DealWeight:         big.Zero(),
+		VerifiedDealWeight: big.Zero(),
+		InitialPledge:      big.Zero(),
+		OnTime:             0,
+		Early:              0,
+	}
+
+	if !showOnChainInfo {
+		return sInfo, nil
+	}
+
+	onChainInfo, err := sm.Full.StateSectorGetInfo(ctx, sm.Miner.Address(), sid, types.EmptyTSK)
+	if err != nil {
+		return sInfo, nil
+	}
+	sInfo.SealProof = onChainInfo.SealProof
+	sInfo.Activation = onChainInfo.Activation
+	sInfo.Expiration = onChainInfo.Expiration
+	sInfo.DealWeight = onChainInfo.DealWeight
+	sInfo.VerifiedDealWeight = onChainInfo.VerifiedDealWeight
+	sInfo.InitialPledge = onChainInfo.InitialPledge
+
+	ex, err := sm.Full.StateSectorExpiration(ctx, sm.Miner.Address(), sid, types.EmptyTSK)
+	if err != nil {
+		return sInfo, nil
+	}
+	sInfo.OnTime = ex.OnTime
+	sInfo.Early = ex.Early
+
+	return sInfo, nil
 }
 
 // List all staged sectors
@@ -235,6 +274,8 @@ func (sm *StorageMinerAPI) WorkerConnect(ctx context.Context, url string) error 
 
 func (sm *StorageMinerAPI) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
 	return sm.StorageMgr.AddMutualPath(ctx, groupsId, mutualPath)
+func (sm *StorageMinerAPI) SealingSchedDiag(ctx context.Context) (interface{}, error) {
+	return sm.StorageMgr.SchedDiag(ctx)
 }
 
 func (sm *StorageMinerAPI) MarketImportDealData(ctx context.Context, propCid cid.Cid, path string) error {
@@ -255,17 +296,26 @@ func (sm *StorageMinerAPI) MarketListIncompleteDeals(ctx context.Context) ([]sto
 	return sm.StorageProvider.ListLocalDeals()
 }
 
-func (sm *StorageMinerAPI) MarketSetAsk(ctx context.Context, price types.BigInt, duration abi.ChainEpoch, minPieceSize abi.PaddedPieceSize, maxPieceSize abi.PaddedPieceSize) error {
+func (sm *StorageMinerAPI) MarketSetAsk(ctx context.Context, price types.BigInt, verifiedPrice types.BigInt, duration abi.ChainEpoch, minPieceSize abi.PaddedPieceSize, maxPieceSize abi.PaddedPieceSize) error {
 	options := []storagemarket.StorageAskOption{
 		storagemarket.MinPieceSize(minPieceSize),
 		storagemarket.MaxPieceSize(maxPieceSize),
 	}
 
-	return sm.StorageProvider.SetAsk(price, duration, options...)
+	return sm.StorageProvider.SetAsk(price, verifiedPrice, duration, options...)
 }
 
 func (sm *StorageMinerAPI) MarketGetAsk(ctx context.Context) (*storagemarket.SignedStorageAsk, error) {
 	return sm.StorageProvider.GetAsk(), nil
+}
+
+func (sm *StorageMinerAPI) MarketSetRetrievalAsk(ctx context.Context, rask *retrievalmarket.Ask) error {
+	sm.RetrievalProvider.SetAsk(rask)
+	return nil
+}
+
+func (sm *StorageMinerAPI) MarketGetRetrievalAsk(ctx context.Context) (*retrievalmarket.Ask, error) {
+	return sm.RetrievalProvider.GetAsk(), nil
 }
 
 func (sm *StorageMinerAPI) DealsList(ctx context.Context) ([]storagemarket.StorageDeal, error) {
@@ -336,6 +386,31 @@ func (sm *StorageMinerAPI) StorageAddLocal(ctx context.Context, path string) err
 	}
 
 	return sm.StorageMgr.AddLocalStorage(ctx, path)
+}
+
+func (sm *StorageMinerAPI) PiecesListPieces(ctx context.Context) ([]cid.Cid, error) {
+	return sm.PieceStore.ListPieceInfoKeys()
+}
+
+func (sm *StorageMinerAPI) PiecesListCidInfos(ctx context.Context) ([]cid.Cid, error) {
+	return sm.PieceStore.ListCidInfoKeys()
+}
+
+func (sm *StorageMinerAPI) PiecesGetPieceInfo(ctx context.Context, pieceCid cid.Cid) (*piecestore.PieceInfo, error) {
+	pi, err := sm.PieceStore.GetPieceInfo(pieceCid)
+	if err != nil {
+		return nil, err
+	}
+	return &pi, nil
+}
+
+func (sm *StorageMinerAPI) PiecesGetCIDInfo(ctx context.Context, payloadCid cid.Cid) (*piecestore.CIDInfo, error) {
+	ci, err := sm.PieceStore.GetCIDInfo(payloadCid)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ci, nil
 }
 
 var _ api.StorageMiner = &StorageMinerAPI{}

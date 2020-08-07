@@ -41,6 +41,7 @@ func main() {
 		lcli.WithCategory("storage", provingCmd),
 		lcli.WithCategory("storage", storageCmd),
 		lcli.WithCategory("storage", sealingCmd),
+		lcli.WithCategory("retrieval", piecesCmd),
 	}
 	jaeger := tracing.SetupJaegerTracing("lotus")
 	defer func() {
@@ -75,6 +76,9 @@ func main() {
 				Usage:   "specify other actor to check state for (read only)",
 				Aliases: []string{"a"},
 			},
+			&cli.BoolFlag{
+				Name: "color",
+			},
 			&cli.StringFlag{
 				Name:    "repo",
 				EnvVars: []string{"LOTUS_PATH"},
@@ -104,6 +108,7 @@ func getActorAddress(ctx context.Context, nodeAPI api.StorageMiner, overrideMadd
 		if err != nil {
 			return maddr, err
 		}
+		return
 	}
 
 	maddr, err = nodeAPI.ActorAddress(ctx)

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/filecoin-project/lotus/build"
+	"github.com/filecoin-project/lotus/miner"
 	"github.com/filecoin-project/lotus/node/impl"
 )
 
@@ -26,22 +27,25 @@ func (ts *testSuite) testMining(t *testing.T) {
 	apis, sn := ts.makeNodes(t, 1, oneMiner)
 	api := apis[0]
 
-	h1, err := api.ChainHead(ctx)
-	require.NoError(t, err)
-	require.Equal(t, abi.ChainEpoch(0), h1.Height())
-
 	newHeads, err := api.ChainNotify(ctx)
 	require.NoError(t, err)
-	<-newHeads
+	initHead := (<-newHeads)[0]
+	if initHead.Val.Height() != 2 {
+		<-newHeads
+	}
 
-	err = sn[0].MineOne(ctx, func(bool, error) {})
+	h1, err := api.ChainHead(ctx)
+	require.NoError(t, err)
+	require.Equal(t, abi.ChainEpoch(2), h1.Height())
+
+	err = sn[0].MineOne(ctx, MineNext)
 	require.NoError(t, err)
 
 	<-newHeads
 
 	h2, err := api.ChainHead(ctx)
 	require.NoError(t, err)
-	require.Equal(t, abi.ChainEpoch(1), h2.Height())
+	require.Equal(t, abi.ChainEpoch(3), h2.Height())
 }
 
 func (ts *testSuite) testMiningReal(t *testing.T) {
@@ -54,31 +58,34 @@ func (ts *testSuite) testMiningReal(t *testing.T) {
 	apis, sn := ts.makeNodes(t, 1, oneMiner)
 	api := apis[0]
 
-	h1, err := api.ChainHead(ctx)
-	require.NoError(t, err)
-	require.Equal(t, abi.ChainEpoch(0), h1.Height())
-
 	newHeads, err := api.ChainNotify(ctx)
 	require.NoError(t, err)
-	<-newHeads
+	initHead := (<-newHeads)[0]
+	if initHead.Val.Height() != 2 {
+		<-newHeads
+	}
 
-	err = sn[0].MineOne(ctx, func(bool, error) {})
+	h1, err := api.ChainHead(ctx)
+	require.NoError(t, err)
+	require.Equal(t, abi.ChainEpoch(2), h1.Height())
+
+	err = sn[0].MineOne(ctx, MineNext)
 	require.NoError(t, err)
 
 	<-newHeads
 
 	h2, err := api.ChainHead(ctx)
 	require.NoError(t, err)
-	require.Equal(t, abi.ChainEpoch(1), h2.Height())
+	require.Equal(t, abi.ChainEpoch(3), h2.Height())
 
-	err = sn[0].MineOne(ctx, func(bool, error) {})
+	err = sn[0].MineOne(ctx, MineNext)
 	require.NoError(t, err)
 
 	<-newHeads
 
 	h2, err = api.ChainHead(ctx)
 	require.NoError(t, err)
-	require.Equal(t, abi.ChainEpoch(2), h2.Height())
+	require.Equal(t, abi.ChainEpoch(4), h2.Height())
 }
 
 func TestDealMining(t *testing.T, b APIBuilder, blocktime time.Duration, carExport bool) {
@@ -142,11 +149,11 @@ func TestDealMining(t *testing.T, b APIBuilder, blocktime time.Duration, carExpo
 				}()
 			}
 
-			if err := sn[0].MineOne(ctx, mdone); err != nil {
+			if err := sn[0].MineOne(ctx, miner.MineReq{Done: mdone}); err != nil {
 				t.Error(err)
 			}
 
-			if err := sn[1].MineOne(ctx, mdone); err != nil {
+			if err := sn[1].MineOne(ctx, miner.MineReq{Done: mdone}); err != nil {
 				t.Error(err)
 			}
 
@@ -194,7 +201,7 @@ func TestDealMining(t *testing.T, b APIBuilder, blocktime time.Duration, carExpo
 	// TODO: this sleep is only necessary because deals don't immediately get logged in the dealstore, we should fix this
 	time.Sleep(time.Second)
 
-	waitDealSealed(t, ctx, provider, client, deal)
+	waitDealSealed(t, ctx, provider, client, deal, false)
 
 	<-minedTwo
 

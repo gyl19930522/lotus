@@ -49,6 +49,15 @@ func (s SealingAPIAdapter) StateMinerSectorSize(ctx context.Context, maddr addre
 	return mi.SectorSize, nil
 }
 
+func (s SealingAPIAdapter) StateMinerPreCommitDepositForPower(ctx context.Context, a address.Address, pci miner.SectorPreCommitInfo, tok sealing.TipSetToken) (big.Int, error) {
+	tsk, err := types.TipSetKeyFromBytes(tok)
+	if err != nil {
+		return big.Zero(), xerrors.Errorf("failed to unmarshal TipSetToken to TipSetKey: %w", err)
+	}
+
+	return s.delegate.StateMinerPreCommitDepositForPower(ctx, a, pci, tsk)
+}
+
 func (s SealingAPIAdapter) StateMinerInitialPledgeCollateral(ctx context.Context, a address.Address, pci miner.SectorPreCommitInfo, tok sealing.TipSetToken) (big.Int, error) {
 	tsk, err := types.TipSetKeyFromBytes(tok)
 	if err != nil {
@@ -113,13 +122,11 @@ func (s SealingAPIAdapter) StateComputeDataCommitment(ctx context.Context, maddr
 	}
 
 	ccmt := &types.Message{
-		To:       builtin.StorageMarketActorAddr,
-		From:     maddr,
-		Value:    types.NewInt(0),
-		GasPrice: types.NewInt(0),
-		GasLimit: 0,
-		Method:   builtin.MethodsMarket.ComputeDataCommitment,
-		Params:   ccparams,
+		To:     builtin.StorageMarketActorAddr,
+		From:   maddr,
+		Value:  types.NewInt(0),
+		Method: builtin.MethodsMarket.ComputeDataCommitment,
+		Params: ccparams,
 	}
 	r, err := s.delegate.StateCall(ctx, ccmt, tsk)
 	if err != nil {
