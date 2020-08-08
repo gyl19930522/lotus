@@ -2,6 +2,7 @@ package full
 
 import (
 	"context"
+	"math"
 	"sort"
 
 	"github.com/filecoin-project/lotus/build"
@@ -25,10 +26,41 @@ type GasAPI struct {
 	Mpool *messagepool.MessagePool
 }
 
-const MinGasPrice = 1
+const MinGasPremium = 10e3
+const MaxSpendOnFeeDenom = 100
 
-func (a *GasAPI) GasEstimateGasPrice(ctx context.Context, nblocksincl uint64,
-	sender address.Address, gaslimit int64, tsk types.TipSetKey) (types.BigInt, error) {
+func (a *GasAPI) GasEstimateFeeCap(ctx context.Context, msg *types.Message, maxqueueblks int64,
+	tsk types.TipSetKey) (types.BigInt, error) {
+	ts := a.Chain.GetHeaviestTipSet()
+
+	var act types.Actor
+	err := a.Stmgr.WithParentState(ts, a.Stmgr.WithActor(msg.From, stmgr.GetActor(&act)))
+	if err != nil {
+		return types.NewInt(0), xerrors.Errorf("getting actor: %w", err)
+	}
+
+	parentBaseFee := ts.Blocks()[0].ParentBaseFee
+	increaseFactor := math.Pow(1.+1./float64(build.BaseFeeMaxChangeDenom), float64(maxqueueblks))
+
+	feeInFuture := types.BigMul(parentBaseFee, types.NewInt(uint64(increaseFactor*(1<<8))))
+	feeInFuture = types.BigDiv(feeInFuture, types.NewInt(1<<8))
+
+	gasLimitBig := types.NewInt(uint64(msg.GasLimit))
+	maxAccepted := types.BigDiv(act.Balance, types.NewInt(MaxSpendOnFeeDenom))
+	expectedFee := types.BigMul(feeInFuture, gasLimitBig)
+
+	out := feeInFuture
+	if types.BigCmp(expectedFee, maxAccepted) > 0 {
+		log.Warnf("Expected fee for message higher than tolerance: %s > %s, setting to tolerance",
+			types.FIL(expectedFee), types.FIL(maxAccepted))
+		out = types.BigDiv(maxAccepted, gasLimitBig)
+	}
+
+	return out, nil
+}
+
+func (a *GasAPI) GasEsitmateGasPremium(ctx context.Context, nblocksincl uint64,
+	sender address.Address, gaslimit int64, _ types.TipSetKey) (types.BigInt, error) {
 
 	if nblocksincl == 0 {
 		nblocksincl = 1
@@ -36,11 +68,10 @@ func (a *GasAPI) GasEstimateGasPrice(ctx context.Context, nblocksincl uint64,
 
 	type gasMeta struct {
 		price big.Int
-		used  int64
+		limit int64
 	}
 
 	var prices []gasMeta
-	var gasUsed int64
 	var blocks int
 
 	ts := a.Chain.GetHeaviestTipSet()
@@ -60,18 +91,11 @@ func (a *GasAPI) GasEstimateGasPrice(ctx context.Context, nblocksincl uint64,
 		if err != nil {
 			return types.BigInt{}, xerrors.Errorf("loading messages: %w", err)
 		}
-
-		for i, msg := range msgs {
-			r, err := a.Chain.GetParentReceipt(ts.MinTicketBlock(), i)
-			if err != nil {
-				return types.BigInt{}, xerrors.Errorf("getting receipt: %w", err)
-			}
-
+		for _, msg := range msgs {
 			prices = append(prices, gasMeta{
-				price: msg.VMMessage().GasPrice,
-				used:  r.GasUsed,
+				price: msg.VMMessage().GasPremium,
+				limit: msg.VMMessage().GasLimit,
 			})
-			gasUsed += r.GasUsed
 		}
 
 		ts = pts
@@ -84,14 +108,18 @@ func (a *GasAPI) GasEstimateGasPrice(ctx context.Context, nblocksincl uint64,
 
 	// todo: account for how full blocks are
 
-	at := gasUsed / 2
+	at := build.BlockGasTarget * int64(blocks) / 2
 	prev := big.Zero()
 
 	for _, price := range prices {
-		at -= price.used
+		at -= price.limit
 		if at > 0 {
 			prev = price.price
 			continue
+		}
+
+		if prev.Equals(big.Zero()) {
+			return types.BigAdd(price.price, big.NewInt(1)), nil
 		}
 
 		return types.BigAdd(big.Div(types.BigAdd(price.price, prev), types.NewInt(2)), big.NewInt(1)), nil
@@ -99,11 +127,11 @@ func (a *GasAPI) GasEstimateGasPrice(ctx context.Context, nblocksincl uint64,
 
 	switch nblocksincl {
 	case 1:
-		return types.NewInt(MinGasPrice + 2), nil
+		return types.NewInt(2 * MinGasPremium), nil
 	case 2:
-		return types.NewInt(MinGasPrice + 1), nil
+		return types.NewInt(1.5 * MinGasPremium), nil
 	default:
-		return types.NewInt(MinGasPrice), nil
+		return types.NewInt(MinGasPremium), nil
 	}
 }
 
@@ -111,7 +139,8 @@ func (a *GasAPI) GasEstimateGasLimit(ctx context.Context, msgIn *types.Message, 
 
 	msg := *msgIn
 	msg.GasLimit = build.BlockGasLimit
-	msg.GasPrice = types.NewInt(1)
+	msg.GasFeeCap = types.NewInt(uint64(build.MinimumBaseFee) + 1)
+	msg.GasPremium = types.NewInt(1)
 
 	currTs := a.Chain.GetHeaviestTipSet()
 	fromA, err := a.Stmgr.ResolveToKeyAddress(ctx, msgIn.From, currTs)

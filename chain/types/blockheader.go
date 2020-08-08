@@ -65,6 +65,9 @@ type BlockHeader struct {
 
 	ForkSignaling uint64 // 14
 
+	// ParentBaseFee is the base fee after executing parent tipset
+	ParentBaseFee abi.TokenAmount // 15
+
 	// internal
 	validated bool // true if the signature has been validated
 }
@@ -168,6 +171,21 @@ func CidArrsEqual(a, b []cid.Cid) bool {
 	}
 
 	for _, c := range b {
+		if !s[c] {
+			return false
+		}
+	}
+	return true
+}
+
+func CidArrsSubset(a, b []cid.Cid) bool {
+	// order ignoring compare...
+	s := make(map[cid.Cid]bool)
+	for _, c := range b {
+		s[c] = true
+	}
+
+	for _, c := range a {
 		if !s[c] {
 			return false
 		}

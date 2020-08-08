@@ -25,6 +25,24 @@ type MpoolAPI struct {
 	Mpool *messagepool.MessagePool
 }
 
+func (a *MpoolAPI) MpoolGetConfig(context.Context) (*types.MpoolConfig, error) {
+	return a.Mpool.GetConfig(), nil
+}
+
+func (a *MpoolAPI) MpoolSetConfig(ctx context.Context, cfg *types.MpoolConfig) error {
+	a.Mpool.SetConfig(cfg)
+	return nil
+}
+
+func (a *MpoolAPI) MpoolSelect(ctx context.Context, tsk types.TipSetKey) ([]*types.SignedMessage, error) {
+	ts, err := a.Chain.GetTipSetFromKey(tsk)
+	if err != nil {
+		return nil, xerrors.Errorf("loading tipset %s: %w", tsk, err)
+	}
+
+	return a.Mpool.SelectMessages(ts)
+}
+
 func (a *MpoolAPI) MpoolPending(ctx context.Context, tsk types.TipSetKey) ([]*types.SignedMessage, error) {
 	ts, err := a.Chain.GetTipSetFromKey(tsk)
 	if err != nil {
@@ -102,12 +120,20 @@ func (a *MpoolAPI) MpoolPushMessage(ctx context.Context, msg *types.Message) (*t
 		msg.GasLimit = int64(float64(gasLimit) * GasMargin)
 	}
 
-	if msg.GasPrice == types.EmptyInt || types.BigCmp(msg.GasPrice, types.NewInt(0)) == 0 {
-		gasPrice, err := a.GasEstimateGasPrice(ctx, 2, msg.From, msg.GasLimit, types.TipSetKey{})
+	if msg.GasPremium == types.EmptyInt || types.BigCmp(msg.GasPremium, types.NewInt(0)) == 0 {
+		gasPremium, err := a.GasEsitmateGasPremium(ctx, 2, msg.From, msg.GasLimit, types.TipSetKey{})
 		if err != nil {
 			return nil, xerrors.Errorf("estimating gas price: %w", err)
 		}
-		msg.GasPrice = gasPrice
+		msg.GasPremium = gasPremium
+	}
+
+	if msg.GasFeeCap == types.EmptyInt || types.BigCmp(msg.GasFeeCap, types.NewInt(0)) == 0 {
+		feeCap, err := a.GasEstimateFeeCap(ctx, msg, 20, types.EmptyTSK)
+		if err != nil {
+			return nil, xerrors.Errorf("estimating fee cap: %w", err)
+		}
+		msg.GasFeeCap = feeCap
 	}
 
 	return a.Mpool.PushWithNonce(ctx, msg.From, func(from address.Address, nonce uint64) (*types.SignedMessage, error) {

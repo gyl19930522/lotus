@@ -48,6 +48,7 @@ type StorageMinerAPI struct {
 	BlockMiner        *miner.Miner
 	Full              api.FullNode
 	StorageMgr        *sectorstorage.Manager `optional:"true"`
+	IStorageMgr       sectorstorage.SectorManager
 	*stores.Index
 
 	ConsiderOnlineStorageDealsConfigFunc       dtypes.ConsiderOnlineStorageDealsConfigFunc
@@ -294,6 +295,35 @@ func (sm *StorageMinerAPI) MarketListDeals(ctx context.Context) ([]storagemarket
 	return sm.StorageProvider.ListDeals(ctx)
 }
 
+func (sm *StorageMinerAPI) MarketListRetrievalDeals(ctx context.Context) ([]retrievalmarket.ProviderDealState, error) {
+	var out []retrievalmarket.ProviderDealState
+	deals := sm.RetrievalProvider.ListDeals()
+
+	for _, deal := range deals {
+		out = append(out, deal)
+	}
+
+	return out, nil
+}
+
+func (sm *StorageMinerAPI) MarketGetDealUpdates(ctx context.Context, d cid.Cid) (<-chan storagemarket.MinerDeal, error) {
+	results := make(chan storagemarket.MinerDeal)
+	unsub := sm.StorageProvider.SubscribeToEvents(func(evt storagemarket.ProviderEvent, deal storagemarket.MinerDeal) {
+		if deal.ProposalCid.Equals(d) {
+			select {
+			case results <- deal:
+			case <-ctx.Done():
+			}
+		}
+	})
+	go func() {
+		<-ctx.Done()
+		unsub()
+		close(results)
+	}()
+	return results, nil
+}
+
 func (sm *StorageMinerAPI) MarketListIncompleteDeals(ctx context.Context) ([]storagemarket.MinerDeal, error) {
 	return sm.StorageProvider.ListLocalDeals()
 }
@@ -322,6 +352,10 @@ func (sm *StorageMinerAPI) MarketGetRetrievalAsk(ctx context.Context) (*retrieva
 
 func (sm *StorageMinerAPI) DealsList(ctx context.Context) ([]storagemarket.StorageDeal, error) {
 	return sm.StorageProvider.ListDeals(ctx)
+}
+
+func (sm *StorageMinerAPI) RetrievalDealsList(ctx context.Context) (map[retrievalmarket.ProviderDealIdentifier]retrievalmarket.ProviderDealState, error) {
+	return sm.RetrievalProvider.ListDeals(), nil
 }
 
 func (sm *StorageMinerAPI) DealsConsiderOnlineStorageDeals(ctx context.Context) (bool, error) {

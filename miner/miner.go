@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/filecoin-project/lotus/chain/gen/slashfilter"
+
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
@@ -20,6 +22,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/messagepool/gasguess"
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/journal"
 
 	logging "github.com/ipfs/go-log/v2"
 	"go.opencensus.io/trace"
@@ -39,7 +42,7 @@ func randTimeOffset(width time.Duration) time.Duration {
 	return val - (width / 2)
 }
 
-func NewMiner(api api.FullNode, epp gen.WinningPoStProver, addr address.Address) *Miner {
+func NewMiner(api api.FullNode, epp gen.WinningPoStProver, addr address.Address, sf *slashfilter.SlashFilter) *Miner {
 	arc, err := lru.NewARC(10000)
 	if err != nil {
 		panic(err)
@@ -60,6 +63,8 @@ func NewMiner(api api.FullNode, epp gen.WinningPoStProver, addr address.Address)
 
 			return func(bool, error) {}, 0, nil
 		},
+
+		sf:                sf,
 		minedBlockHeights: arc,
 	}
 }
@@ -78,6 +83,7 @@ type Miner struct {
 
 	lastWork *MiningBase
 
+	sf                *slashfilter.SlashFilter
 	minedBlockHeights *lru.ARCCache
 }
 
@@ -143,25 +149,50 @@ func (m *Miner) mine(ctx context.Context) {
 		default:
 		}
 
-		prebase, err := m.GetBestMiningCandidate(ctx)
-		if err != nil {
-			log.Errorf("failed to get best mining candidate: %s", err)
-			m.niceSleep(time.Second * 5)
-			continue
+		var base *MiningBase
+		var onDone func(bool, error)
+		var injectNulls abi.ChainEpoch
+
+		for {
+			prebase, err := m.GetBestMiningCandidate(ctx)
+			if err != nil {
+				log.Errorf("failed to get best mining candidate: %s", err)
+				m.niceSleep(time.Second * 5)
+				continue
+			}
+
+			if base != nil && base.TipSet.Height() == prebase.TipSet.Height() && base.NullRounds == prebase.NullRounds {
+				base = prebase
+				break
+			}
+			if base != nil {
+				onDone(false, nil)
+			}
+
+			// TODO: need to change the orchestration here. the problem is that
+			// we are waiting *after* we enter this loop and selecta mining
+			// candidate, which is almost certain to change in multiminer
+			// tests. Instead, we should block before entering the loop, so
+			// that when the test 'MineOne' function is triggered, we pull our
+			// best mining candidate at that time.
+
+			// Wait until propagation delay period after block we plan to mine on
+			onDone, injectNulls, err = m.waitFunc(ctx, prebase.TipSet.MinTimestamp())
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+
+			// just wait for the beacon entry to become available before we select our final mining base
+			_, err = m.api.BeaconGetEntry(ctx, prebase.TipSet.Height()+prebase.NullRounds+1)
+			if err != nil {
+				log.Errorf("failed getting beacon entry: %s", err)
+				continue
+			}
+
+			base = prebase
 		}
 
-		// Wait until propagation delay period after block we plan to mine on
-		onDone, injectNulls, err := m.waitFunc(ctx, prebase.TipSet.MinTimestamp())
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
-		base, err := m.GetBestMiningCandidate(ctx)
-		if err != nil {
-			log.Errorf("failed to get best mining candidate: %s", err)
-			continue
-		}
 		if base.TipSet.Equals(lastBase.TipSet) && lastBase.NullRounds == base.NullRounds {
 			log.Warnf("BestMiningCandidate from the previous round: %s (nulls:%d)", lastBase.TipSet.Cids(), lastBase.NullRounds)
 			m.niceSleep(time.Duration(build.BlockDelaySecs) * time.Second)
@@ -182,6 +213,14 @@ func (m *Miner) mine(ctx context.Context) {
 		onDone(b != nil, nil)
 
 		if b != nil {
+			journal.Add("blockMined", map[string]interface{}{
+				"parents":   base.TipSet.Cids(),
+				"nulls":     base.NullRounds,
+				"epoch":     b.Header.Height,
+				"timestamp": b.Header.Timestamp,
+				"cid":       b.Header.Cid(),
+			})
+
 			btime := time.Unix(int64(b.Header.Timestamp), 0)
 			now := build.Clock.Now()
 			switch {
@@ -197,7 +236,11 @@ func (m *Miner) mine(ctx context.Context) {
 					"block-time", btime, "time", build.Clock.Now(), "difference", build.Clock.Since(btime))
 			}
 
-			// TODO: should do better 'anti slash' protection here
+			if err := m.sf.MinedBlock(b.Header, base.TipSet.Height()+base.NullRounds); err != nil {
+				log.Errorf("<!!> SLASH FILTER ERROR: %s", err)
+				continue
+			}
+
 			blkKey := fmt.Sprintf("%d", b.Header.Height)
 			if _, ok := m.minedBlockHeights.Get(blkKey); ok {
 				log.Warnw("Created a block at the same height as another block we've created", "height", b.Header.Height, "miner", b.Header.Miner, "parents", b.Header.Parents)
@@ -205,6 +248,7 @@ func (m *Miner) mine(ctx context.Context) {
 			}
 
 			m.minedBlockHeights.Add(blkKey, true)
+
 			if err := m.api.SyncSubmitBlock(ctx, b); err != nil {
 				log.Errorf("failed to submit newly mined block: %s", err)
 			}
@@ -347,22 +391,26 @@ func (m *Miner) mineOne(ctx context.Context, base *MiningBase) (*types.BlockMsg,
 	}
 
 	// get pending messages early,
-	pending, err := m.api.MpoolPending(context.TODO(), base.TipSet.Key())
+	msgs, err := m.api.MpoolSelect(context.TODO(), base.TipSet.Key())
 	if err != nil {
-		return nil, xerrors.Errorf("failed to get pending messages: %w", err)
+		return nil, xerrors.Errorf("failed to select messages for block: %w", err)
 	}
 
 	tPending := build.Clock.Now()
 
 	// TODO: winning post proof
-	b, err := m.createBlock(base, m.address, ticket, winner, bvals, postProof, pending)
+	b, err := m.createBlock(base, m.address, ticket, winner, bvals, postProof, msgs)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to create block: %w", err)
 	}
 
 	tCreateBlock := build.Clock.Now()
 	dur := tCreateBlock.Sub(start)
-	log.Infow("mined new block", "cid", b.Cid(), "height", b.Header.Height, "took", dur)
+	parentMiners := make([]address.Address, len(base.TipSet.Blocks()))
+	for i, header := range base.TipSet.Blocks() {
+		parentMiners[i] = header.Miner
+	}
+	log.Infow("mined new block", "cid", b.Cid(), "height", b.Header.Height, "miner", b.Header.Miner, "parents", parentMiners, "took", dur)
 	if dur > time.Second*time.Duration(build.BlockDelaySecs) {
 		log.Warnw("CAUTION: block production took longer than the block delay. Your computer may not be fast enough to keep up",
 			"tMinerBaseInfo ", tMBI.Sub(start),
@@ -412,17 +460,7 @@ func (m *Miner) computeTicket(ctx context.Context, brand *types.BeaconEntry, bas
 }
 
 func (m *Miner) createBlock(base *MiningBase, addr address.Address, ticket *types.Ticket,
-	eproof *types.ElectionProof, bvals []types.BeaconEntry, wpostProof []abi.PoStProof, pending []*types.SignedMessage) (*types.BlockMsg, error) {
-	msgs, err := SelectMessages(context.TODO(), m.api.StateGetActor, base.TipSet, pending)
-	if err != nil {
-		return nil, xerrors.Errorf("message filtering failed: %w", err)
-	}
-
-	if len(msgs) > build.BlockMessageLimit {
-		log.Error("SelectMessages returned too many messages: ", len(msgs))
-		msgs = msgs[:build.BlockMessageLimit]
-	}
-
+	eproof *types.ElectionProof, bvals []types.BeaconEntry, wpostProof []abi.PoStProof, msgs []*types.SignedMessage) (*types.BlockMsg, error) {
 	uts := base.TipSet.MinTimestamp() + build.BlockDelaySecs*(uint64(base.NullRounds)+1)
 
 	nheight := base.TipSet.Height() + base.NullRounds + 1

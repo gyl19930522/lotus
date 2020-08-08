@@ -11,6 +11,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/wallet"
 	_ "github.com/filecoin-project/lotus/lib/sigs/bls"
 	_ "github.com/filecoin-project/lotus/lib/sigs/secp"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/crypto"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
@@ -26,6 +27,7 @@ type testMpoolAPI struct {
 
 	bmsgs      map[cid.Cid][]*types.SignedMessage
 	statenonce map[address.Address]uint64
+	balance    map[address.Address]types.BigInt
 
 	tipsets []*types.TipSet
 }
@@ -34,6 +36,7 @@ func newTestMpoolAPI() *testMpoolAPI {
 	return &testMpoolAPI{
 		bmsgs:      make(map[cid.Cid][]*types.SignedMessage),
 		statenonce: make(map[address.Address]uint64),
+		balance:    make(map[address.Address]types.BigInt),
 	}
 }
 
@@ -55,6 +58,14 @@ func (tma *testMpoolAPI) setStateNonce(addr address.Address, v uint64) {
 	tma.statenonce[addr] = v
 }
 
+func (tma *testMpoolAPI) setBalance(addr address.Address, v uint64) {
+	tma.balance[addr] = types.FromFil(v)
+}
+
+func (tma *testMpoolAPI) setBalanceRaw(addr address.Address, v types.BigInt) {
+	tma.balance[addr] = v
+}
+
 func (tma *testMpoolAPI) setBlockMessages(h *types.BlockHeader, msgs ...*types.SignedMessage) {
 	tma.bmsgs[h.Cid()] = msgs
 	tma.tipsets = append(tma.tipsets, mock.TipSet(h))
@@ -74,9 +85,15 @@ func (tma *testMpoolAPI) PubSubPublish(string, []byte) error {
 }
 
 func (tma *testMpoolAPI) StateGetActor(addr address.Address, ts *types.TipSet) (*types.Actor, error) {
+	balance, ok := tma.balance[addr]
+	if !ok {
+		balance = types.NewInt(1000e6)
+		tma.balance[addr] = balance
+	}
 	return &types.Actor{
+		Code:    builtin.StorageMarketActorCodeID,
 		Nonce:   tma.statenonce[addr],
-		Balance: types.NewInt(90000000),
+		Balance: balance,
 	}, nil
 }
 
@@ -121,6 +138,10 @@ func (tma *testMpoolAPI) LoadTipSet(tsk types.TipSetKey) (*types.TipSet, error) 
 	}
 
 	return nil, fmt.Errorf("tipset not found")
+}
+
+func (tma *testMpoolAPI) ChainComputeBaseFee(ctx context.Context, ts *types.TipSet) (types.BigInt, error) {
+	return types.NewInt(100), nil
 }
 
 func assertNonce(t *testing.T, mp *MessagePool, addr address.Address, val uint64) {
@@ -277,8 +298,8 @@ func TestPruningSimple(t *testing.T) {
 		}
 	}
 
-	mp.maxTxPoolSizeHi = 40
-	mp.maxTxPoolSizeLo = 10
+	mp.cfg.SizeLimitHigh = 40
+	mp.cfg.SizeLimitLow = 10
 
 	mp.Prune()
 

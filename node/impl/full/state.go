@@ -378,22 +378,22 @@ func (a *StateAPI) StateReadState(ctx context.Context, actor address.Address, ts
 	}
 	state, err := a.stateForTs(ctx, ts)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("getting state for tipset: %w", err)
 	}
 
 	act, err := state.GetActor(actor)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("getting actor: %w", err)
 	}
 
 	blk, err := state.Store.(*cbor.BasicIpldStore).Blocks.Get(act.Head)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("getting actor head: %w", err)
 	}
 
 	oif, err := vm.DumpActorState(act.Code, blk.RawData())
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("dumping actor state (a:%s): %w", actor, err)
 	}
 
 	return &api.ActorState{
@@ -759,7 +759,7 @@ func (a *StateAPI) StateSectorExpiration(ctx context.Context, maddr address.Addr
 	var onTimeEpoch, earlyEpoch abi.ChainEpoch
 
 	err := a.sectorPartition(ctx, maddr, sectorNumber, tsk, func(store adt.Store, mas *miner.State, di uint64, pi uint64, part *miner.Partition) error {
-		quant := mas.QuantEndOfDeadline()
+		quant := mas.QuantSpecForDeadline(di)
 		expirations, err := miner.LoadExpirationQueue(store, part.ExpirationsEpochs, quant)
 		if err != nil {
 			return xerrors.Errorf("loading expiration queue: %w", err)
@@ -968,12 +968,10 @@ func (a *StateAPI) StateMinerPreCommitDepositForPower(ctx context.Context, maddr
 		}
 
 		ret, err := a.StateManager.Call(ctx, &types.Message{
-			From:     maddr,
-			To:       builtin.StorageMarketActorAddr,
-			Method:   builtin.MethodsMarket.VerifyDealsForActivation,
-			GasLimit: 0,
-			GasPrice: types.NewInt(0),
-			Params:   params,
+			From:   maddr,
+			To:     builtin.StorageMarketActorAddr,
+			Method: builtin.MethodsMarket.VerifyDealsForActivation,
+			Params: params,
 		}, ts)
 		if err != nil {
 			return types.EmptyInt, err
@@ -1048,12 +1046,10 @@ func (a *StateAPI) StateMinerInitialPledgeCollateral(ctx context.Context, maddr 
 		}
 
 		ret, err := a.StateManager.Call(ctx, &types.Message{
-			From:     maddr,
-			To:       builtin.StorageMarketActorAddr,
-			Method:   builtin.MethodsMarket.VerifyDealsForActivation,
-			GasLimit: 0,
-			GasPrice: types.NewInt(0),
-			Params:   params,
+			From:   maddr,
+			To:     builtin.StorageMarketActorAddr,
+			Method: builtin.MethodsMarket.VerifyDealsForActivation,
+			Params: params,
 		}, ts)
 		if err != nil {
 			return types.EmptyInt, err
@@ -1187,4 +1183,13 @@ func (a *StateAPI) StateDealProviderCollateralBounds(ctx context.Context, size a
 		Min: types.BigDiv(types.BigMul(min, dealProviderCollateralNum), dealProviderCollateralDen),
 		Max: max,
 	}, nil
+}
+
+func (a *StateAPI) StateCirculatingSupply(ctx context.Context, tsk types.TipSetKey) (abi.TokenAmount, error) {
+	ts, err := a.Chain.GetTipSetFromKey(tsk)
+	if err != nil {
+		return abi.TokenAmount{}, xerrors.Errorf("loading tipset %s: %w", tsk, err)
+	}
+
+	return stmgr.GetCirculatingSupply(ctx, a.StateManager, ts)
 }

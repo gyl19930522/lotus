@@ -28,7 +28,7 @@ var paychCmd = &cli.Command{
 
 var paychGetCmd = &cli.Command{
 	Name:      "get",
-	Usage:     "Create a new payment channel or get existing one",
+	Usage:     "Create a new payment channel or get existing one and add amount to it",
 	ArgsUsage: "[fromAddress toAddress amount]",
 	Action: func(cctx *cli.Context) error {
 		if cctx.Args().Len() != 3 {
@@ -58,12 +58,20 @@ var paychGetCmd = &cli.Command{
 
 		ctx := ReqContext(cctx)
 
+		// Send a message to chain to create channel / add funds to existing
+		// channel
 		info, err := api.PaychGet(ctx, from, to, types.BigInt(amt))
 		if err != nil {
 			return err
 		}
 
-		fmt.Println(info.Channel.String())
+		// Wait for the message to be confirmed
+		chAddr, err := api.PaychGetWaitReady(ctx, info.ChannelMessage)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(chAddr)
 		return nil
 	},
 }
