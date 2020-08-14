@@ -166,11 +166,11 @@ type SectorDealEvent struct {
 }
 
 type PartitionStatus struct {
-	Terminated *abi.BitField
-	Expired    *abi.BitField
-	Faulted    *abi.BitField
-	InRecovery *abi.BitField
-	Recovered  *abi.BitField
+	Terminated abi.BitField
+	Expired    abi.BitField
+	Faulted    abi.BitField
+	InRecovery abi.BitField
+	Recovered  abi.BitField
 }
 
 type minerActorInfo struct {
@@ -319,7 +319,7 @@ func (p *Processor) storeMinerPreCommitInfo(ctx context.Context, miners []minerA
 
 		changes, err := p.getMinerPreCommitChanges(ctx, m)
 		if err != nil {
-			if strings.Contains(err.Error(), "address not found") {
+			if strings.Contains(err.Error(), types.ErrActorNotFound.Error()) {
 				continue
 			} else {
 				return err
@@ -439,7 +439,7 @@ func (p *Processor) storeMinerSectorInfo(ctx context.Context, miners []minerActo
 	for _, m := range miners {
 		changes, err := p.getMinerSectorChanges(ctx, m)
 		if err != nil {
-			if strings.Contains(err.Error(), "address not found") {
+			if strings.Contains(err.Error(), types.ErrActorNotFound.Error()) {
 				continue
 			} else {
 				return err
@@ -518,7 +518,7 @@ func (p *Processor) getMinerPartitionsDifferences(ctx context.Context, miners []
 		m := m
 		grp.Go(func() error {
 			if err := p.diffMinerPartitions(ctx, m, events); err != nil {
-				if strings.Contains(err.Error(), "address not found") {
+				if strings.Contains(err.Error(), types.ErrActorNotFound.Error()) {
 					return nil
 				}
 				return err
@@ -794,11 +794,11 @@ func (p *Processor) diffPartition(prevPart, curPart miner.Partition) (*Partition
 		return nil, err
 	}
 
-	expired := abi.NewBitField()
+	expired := bitfield.New()
 	var bf abi.BitField
 	if err := terminatedEarlyArr.ForEach(&bf, func(i int64) error {
 		// expired = all removals - termination
-		expirations, err := bitfield.SubtractBitField(allRemovedSectors, &bf)
+		expirations, err := bitfield.SubtractBitField(allRemovedSectors, bf)
 		if err != nil {
 			return err
 		}
@@ -873,7 +873,7 @@ func (p *Processor) storeMinersActorInfoState(ctx context.Context, miners []mine
 	for _, m := range miners {
 		mi, err := p.node.StateMinerInfo(ctx, m.common.addr, m.common.tsKey)
 		if err != nil {
-			if strings.Contains(err.Error(), "address not found") {
+			if strings.Contains(err.Error(), types.ErrActorNotFound.Error()) {
 				continue
 			} else {
 				return err

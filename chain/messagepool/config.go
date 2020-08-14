@@ -2,6 +2,7 @@ package messagepool
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/filecoin-project/lotus/chain/types"
@@ -14,6 +15,7 @@ var (
 	MemPoolSizeLimitHiDefault = 30000
 	MemPoolSizeLimitLoDefault = 20000
 	PruneCooldownDefault      = time.Minute
+	GasLimitOverestimation    = 1.25
 
 	ConfigKey = datastore.NewKey("/mpool/config")
 )
@@ -51,23 +53,40 @@ func (mp *MessagePool) GetConfig() *types.MpoolConfig {
 	return mp.cfg.Clone()
 }
 
-func (mp *MessagePool) SetConfig(cfg *types.MpoolConfig) {
+func validateConfg(cfg *types.MpoolConfig) error {
+	if cfg.ReplaceByFeeRatio < ReplaceByFeeRatioDefault {
+		return fmt.Errorf("'ReplaceByFeeRatio' is less than required %f < %f",
+			cfg.ReplaceByFeeRatio, ReplaceByFeeRatioDefault)
+	}
+	if cfg.GasLimitOverestimation < 1 {
+		return fmt.Errorf("'GasLimitOverestimation' cannot be less than 1")
+	}
+	return nil
+}
+
+func (mp *MessagePool) SetConfig(cfg *types.MpoolConfig) error {
+	if err := validateConfg(cfg); err != nil {
+		return err
+	}
 	cfg = cfg.Clone()
+
 	mp.cfgLk.Lock()
 	mp.cfg = cfg
-	mp.rbfNum = types.NewInt(uint64((cfg.ReplaceByFeeRatio - 1) * RbfDenom))
 	err := saveConfig(cfg, mp.ds)
 	if err != nil {
 		log.Warnf("error persisting mpool config: %s", err)
 	}
 	mp.cfgLk.Unlock()
+
+	return nil
 }
 
 func DefaultConfig() *types.MpoolConfig {
 	return &types.MpoolConfig{
-		SizeLimitHigh:     MemPoolSizeLimitHiDefault,
-		SizeLimitLow:      MemPoolSizeLimitLoDefault,
-		ReplaceByFeeRatio: ReplaceByFeeRatioDefault,
-		PruneCooldown:     PruneCooldownDefault,
+		SizeLimitHigh:          MemPoolSizeLimitHiDefault,
+		SizeLimitLow:           MemPoolSizeLimitLoDefault,
+		ReplaceByFeeRatio:      ReplaceByFeeRatioDefault,
+		PruneCooldown:          PruneCooldownDefault,
+		GasLimitOverestimation: GasLimitOverestimation,
 	}
 }

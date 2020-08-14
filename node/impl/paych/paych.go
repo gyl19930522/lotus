@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/filecoin-project/specs-actors/actors/builtin"
-	"github.com/filecoin-project/specs-actors/actors/builtin/paych"
 	"github.com/ipfs/go-cid"
 	"go.uber.org/fx"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/specs-actors/actors/builtin"
+	"github.com/filecoin-project/specs-actors/actors/builtin/paych"
+
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/actors"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -35,13 +36,13 @@ func (a *PaychAPI) PaychGet(ctx context.Context, from, to address.Address, amt t
 	}
 
 	return &api.ChannelInfo{
-		Channel:        ch,
-		ChannelMessage: mcid,
+		Channel:      ch,
+		WaitSentinel: mcid,
 	}, nil
 }
 
-func (a *PaychAPI) PaychGetWaitReady(ctx context.Context, mcid cid.Cid) (address.Address, error) {
-	return a.PaychMgr.GetPaychWaitReady(ctx, mcid)
+func (a *PaychAPI) PaychGetWaitReady(ctx context.Context, sentinel cid.Cid) (address.Address, error) {
+	return a.PaychMgr.GetPaychWaitReady(ctx, sentinel)
 }
 
 func (a *PaychAPI) PaychAllocateLane(ctx context.Context, ch address.Address) (uint64, error) {
@@ -84,15 +85,10 @@ func (a *PaychAPI) PaychNewPayment(ctx context.Context, from, to address.Address
 		svs[i] = sv
 	}
 
-	var pchCid *cid.Cid
-	if ch.ChannelMessage != cid.Undef {
-		pchCid = &ch.ChannelMessage
-	}
-
 	return &api.PaymentInfo{
-		Channel:        ch.Channel,
-		ChannelMessage: pchCid,
-		Vouchers:       svs,
+		Channel:      ch.Channel,
+		WaitSentinel: ch.WaitSentinel,
+		Vouchers:     svs,
 	}, nil
 }
 
@@ -116,25 +112,7 @@ func (a *PaychAPI) PaychSettle(ctx context.Context, addr address.Address) (cid.C
 }
 
 func (a *PaychAPI) PaychCollect(ctx context.Context, addr address.Address) (cid.Cid, error) {
-
-	ci, err := a.PaychMgr.GetChannelInfo(addr)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	msg := &types.Message{
-		To:     addr,
-		From:   ci.Control,
-		Value:  types.NewInt(0),
-		Method: builtin.MethodsPaych.Collect,
-	}
-
-	smsg, err := a.MpoolPushMessage(ctx, msg)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	return smsg.Cid(), nil
+	return a.PaychMgr.Collect(ctx, addr)
 }
 
 func (a *PaychAPI) PaychVoucherCheckValid(ctx context.Context, ch address.Address, sv *paych.SignedVoucher) error {
@@ -232,7 +210,7 @@ func (a *PaychAPI) PaychVoucherSubmit(ctx context.Context, ch address.Address, s
 		Params: enc,
 	}
 
-	smsg, err := a.MpoolPushMessage(ctx, msg)
+	smsg, err := a.MpoolPushMessage(ctx, msg, nil)
 	if err != nil {
 		return cid.Undef, err
 	}

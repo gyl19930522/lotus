@@ -9,15 +9,15 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/ipfs/go-cid"
-	typegen "github.com/whyrusleeping/cbor-gen"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/lotus/chain/events/state"
+	"github.com/filecoin-project/lotus/chain/types"
+	cw_util "github.com/filecoin-project/lotus/cmd/lotus-chainwatch/util"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	_init "github.com/filecoin-project/specs-actors/actors/builtin/init"
 	"github.com/filecoin-project/specs-actors/actors/util/adt"
-
-	"github.com/filecoin-project/lotus/chain/types"
-	cw_util "github.com/filecoin-project/lotus/cmd/lotus-chainwatch/util"
+	typegen "github.com/whyrusleeping/cbor-gen"
 )
 
 func (p *Processor) setupCommonActors() error {
@@ -125,6 +125,11 @@ func (p *Processor) HandleCommonActorsChanges(ctx context.Context, actors map[ci
 	return grp.Wait()
 }
 
+type UpdateAddresses struct {
+	Old state.AddressPair
+	New state.AddressPair
+}
+
 func (p Processor) storeActorAddresses(ctx context.Context, actors map[cid.Cid]ActorTips) error {
 	start := time.Now()
 	defer func() {
@@ -209,7 +214,8 @@ create temp table iam (like id_address_map excluding constraints) on commit drop
 
 	// HACK until chain watch can handle reorgs we need to update this table when ID -> PubKey mappings change
 	if _, err := tx.Exec(`insert into id_address_map select * from iam on conflict (id) do update set address = EXCLUDED.address`); err != nil {
-		return xerrors.Errorf("actor put: %w", err)
+		log.Warnw("Failed to update id_address_map table, this is a known issue")
+		return nil
 	}
 
 	return tx.Commit()
