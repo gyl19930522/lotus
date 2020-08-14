@@ -67,13 +67,11 @@ func (m *Sealing) PledgeSector() error {
 		}
 
 
-		pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
-		/*
+		//pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
 		log.Infof("DECENTRAL: calling readPiecesJson")
 
 		pieces, err := m.readPiecesJson(ctx, m.minerSector(sid), size)
 
-		*/
 		if err != nil {
 			log.Errorf("%+v", err)
 			return
