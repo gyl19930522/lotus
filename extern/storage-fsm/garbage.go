@@ -2,7 +2,6 @@ package sealing
 
 import (
 	"context"
-	"io"
 
 	"golang.org/x/xerrors"
 
@@ -19,10 +18,6 @@ import (
 	"strconv"
 )
 
-func (m *Sealing) pledgeReader(size abi.UnpaddedPieceSize) io.Reader {
-	return io.LimitReader(&nr.Reader{}, int64(size))
-}
-
 func (m *Sealing) pledgeSector(ctx context.Context, sectorID abi.SectorID, existingPieceSizes []abi.UnpaddedPieceSize, sizes ...abi.UnpaddedPieceSize) ([]abi.PieceInfo, error) {
 	if len(sizes) == 0 {
 		return nil, nil
@@ -33,7 +28,8 @@ func (m *Sealing) pledgeSector(ctx context.Context, sectorID abi.SectorID, exist
 	out := make([]abi.PieceInfo, len(sizes))
 	for i, size := range sizes {
 		log.Infof("DECENTRAL: starting add piece")
-		ppi, err := m.sealer.AddPiece(ctx, sectorID, existingPieceSizes, size, m.pledgeReader(size))
+		//ppi, err := m.sealer.AddPiece(ctx, sectorID, existingPieceSizes, size, m.pledgeReader(size))
+		ppi, err := m.sealer.AddPiece(ctx, sectorID, existingPieceSizes, size, NewNullReader(size))
 		if err != nil {
 			return nil, xerrors.Errorf("add piece: %w", err)
 		}

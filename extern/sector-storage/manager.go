@@ -388,6 +388,7 @@ func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		out = p
 		return nil
 	})
+	log.Infof("DECENTRAL: manager add piece - scheduled ")
 
 	return out, err
 }
@@ -573,6 +574,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		return err
 	}
 
+	log.Infof("DECENTRAL: manager finalize sector - finalize scheduled ")
 	/*
 	log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
 	fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
@@ -594,6 +596,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
 	}
+	log.Infof("DECENTRAL: manager finalize sector - fetch scheduled ")
 
 	return nil
 }
