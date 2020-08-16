@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"github.com/filecoin-project/sector-storage/stores"
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	nr "github.com/filecoin-project/storage-fsm/lib/nullreader"
+	//nr "github.com/filecoin-project/storage-fsm/lib/nullreader"
 	"github.com/mitchellh/go-homedir"
 	"io/ioutil"
 	"math"
