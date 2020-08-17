@@ -277,6 +277,7 @@ func (sm *StorageMinerAPI) WorkerConnect(ctx context.Context, url string) error 
 func (sm *StorageMinerAPI) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
 	return sm.StorageMgr.AddMutualPath(ctx, groupsId, mutualPath)
 }
+
 func (sm *StorageMinerAPI) SealingSchedDiag(ctx context.Context) (interface{}, error) {
 	return sm.StorageMgr.SchedDiag(ctx)
 }
