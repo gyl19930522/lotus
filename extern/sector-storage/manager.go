@@ -5,16 +5,17 @@ import (
 	"io"
 	"net/http"
 
-	logging "github.com/ipfs/go-log/v2"
 	"encoding/json"
 	"errors"
-	"github.com/filecoin-project/sector-storage/fsutil"
-	"github.com/ipfs/go-cid"
-	"github.com/mitchellh/go-homedir"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/filecoin-project/sector-storage/fsutil"
+	"github.com/ipfs/go-cid"
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/mitchellh/go-homedir"
 
 	"golang.org/x/xerrors"
 
@@ -122,49 +123,57 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 
 	go m.sched.runSched()
 
-	localTasks_finalize := []sealtasks.TaskType{
-		sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
+	localTasks := []sealtasks.TaskType{
+		sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
 	}
-	localTasks_addpiece := []sealtasks.TaskType{
-		sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
-	}
-	localTasks_fetch := []sealtasks.TaskType{
-		sealtasks.TTCommit1, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
-	}
+
+	// localTasks_finalize := []sealtasks.TaskType{
+	// 	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
+	// }
+	// localTasks_addpiece := []sealtasks.TaskType{
+	// 	sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTReadUnsealed,
+	// }
+	// localTasks_fetch := []sealtasks.TaskType{
+	// 	sealtasks.TTCommit1, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+	// }
 	/*
-	if sc.AllowPreCommit1 {
-		localTasks = append(localTasks, sealtasks.TTPreCommit1)
-	}
-	if sc.AllowPreCommit2 {
-		localTasks = append(localTasks, sealtasks.TTPreCommit2)
-	}
-	if sc.AllowCommit {
-		localTasks = append(localTasks, sealtasks.TTCommit2)
-	}
-	if sc.AllowUnseal {
-		localTasks = append(localTasks, sealtasks.TTUnseal)
+		if sc.AllowPreCommit1 {
+			localTasks = append(localTasks, sealtasks.TTPreCommit1)
+		}
+		if sc.AllowPreCommit2 {
+			localTasks = append(localTasks, sealtasks.TTPreCommit2)
+		}
+		if sc.AllowCommit {
+			localTasks = append(localTasks, sealtasks.TTCommit2)
+		}
+		if sc.AllowUnseal {
+			localTasks = append(localTasks, sealtasks.TTUnseal)
 	*/
 	if sc.AllowUnseal {
-	//	localTasks = append(localTasks, sealtasks.TTUnseal)
-		localTasks_finalize = append(localTasks_finalize, sealtasks.TTUnseal)
-		localTasks_addpiece = append(localTasks_addpiece, sealtasks.TTUnseal)
-		localTasks_fetch = append(localTasks_fetch, sealtasks.TTUnseal)
+		localTasks = append(localTasks, sealtasks.TTUnseal)
+		// localTasks_finalize = append(localTasks_finalize, sealtasks.TTUnseal)
+		// localTasks_addpiece = append(localTasks_addpiece, sealtasks.TTUnseal)
+		// localTasks_fetch = append(localTasks_fetch, sealtasks.TTUnseal)
 	}
-
 	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks_finalize,
+		TaskTypes: localTasks,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 
-	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks_addpiece,
-	}, stor, lstor, si, -1, "NoUse", "NoUse"))
+	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
+	// 	SealProof: cfg.SealProofType,
+	// 	TaskTypes: localTasks_finalize,
+	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
 
-	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks_fetch,
-	}, stor, lstor, si, -1, "NoUse", "NoUse"))
+	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
+	// 	SealProof: cfg.SealProofType,
+	// 	TaskTypes: localTasks_addpiece,
+	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
+
+	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
+	// 	SealProof: cfg.SealProofType,
+	// 	TaskTypes: localTasks_fetch,
+	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
 
 	if err != nil {
 		return nil, xerrors.Errorf("adding local worker: %w", err)
@@ -201,27 +210,27 @@ func (m *Manager) AddWorker(ctx context.Context, w Worker) error {
 	// since the newExistingSelector now seeks worker everytime, the following code is not necessary
 
 	/*
-	my_tasktypes, err := w.TaskTypes(ctx)
+		my_tasktypes, err := w.TaskTypes(ctx)
 
-	if err == nil {
+		if err == nil {
 
-		for sqi := 0; sqi < m.sched.schedQueue.Len(); sqi ++ {
-			task := (*m.sched.schedQueue)[sqi]
-			_, supported := my_tasktypes[task.taskType]
+			for sqi := 0; sqi < m.sched.schedQueue.Len(); sqi ++ {
+				task := (*m.sched.schedQueue)[sqi]
+				_, supported := my_tasktypes[task.taskType]
 
-			if (task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1) && (supported) {
-				//log.Debug("DECENTRAL: AddWorker - new selector for task %d", task.sector.Number)
-				//selector := newExistingSelector(m.index, task.sector, stores.FTCache|stores.FTSealed, true)
-				selector, err := newExistingSelector(ctx, m.index, task.sector, stores.FTCache|stores.FTSealed, true)
-				if err != nil {
-					log.Debug("DECENTRAL: Cannot update task %d selector", task.sector.Number)
+				if (task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1) && (supported) {
+					//log.Debug("DECENTRAL: AddWorker - new selector for task %d", task.sector.Number)
+					//selector := newExistingSelector(m.index, task.sector, stores.FTCache|stores.FTSealed, true)
+					selector, err := newExistingSelector(ctx, m.index, task.sector, stores.FTCache|stores.FTSealed, true)
+					if err != nil {
+						log.Debug("DECENTRAL: Cannot update task %d selector", task.sector.Number)
+					}
+					task.sel = selector
+					//log.Debugf("DECENTRAL: AddWorker - task selector is %v", task.sel)
 				}
-				task.sel = selector
-				//log.Debugf("DECENTRAL: AddWorker - task selector is %v", task.sel)
 			}
+			log.Debugf("DECENTRAL: task updated and worker added")
 		}
-		log.Debugf("DECENTRAL: task updated and worker added")
-	}
 
 	*/
 
@@ -364,11 +373,11 @@ func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 	var err error
 	if len(existingPieces) == 0 { // new
 		/*
-		log.Infof("DECENTRAL: manager add piece - newAllocSelector")
-		selector = newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
-	} else { // use existing
-		log.Infof("DECENTRAL: manager add piece - newExistingSelector")
-		selector = newExistingSelector(m.index, sector, stores.FTUnsealed, false)
+				log.Infof("DECENTRAL: manager add piece - newAllocSelector")
+				selector = newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
+			} else { // use existing
+				log.Infof("DECENTRAL: manager add piece - newExistingSelector")
+				selector = newExistingSelector(m.index, sector, stores.FTUnsealed, false)
 		*/
 		selector = newAllocSelector(ctx, m.index, stores.FTUnsealed, stores.PathSealing)
 	} else { // use existing
@@ -557,11 +566,11 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	}
 
 	/*
-	log.Infof("DECENTRAL: manager finalize sector - newExistingSelector")
-	selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
+		log.Infof("DECENTRAL: manager finalize sector - newExistingSelector")
+		selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
 
-	log.Infof("DECENTRAL: manager finalize sector - schedule finalize")
-	err := m.sched.Schedule(ctx, sector, sealtasks.TTFinalize, selector,
+		log.Infof("DECENTRAL: manager finalize sector - schedule finalize")
+		err := m.sched.Schedule(ctx, sector, sealtasks.TTFinalize, selector,
 	*/
 	selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
 
@@ -576,8 +585,8 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 
 	log.Infof("DECENTRAL: manager finalize sector - finalize scheduled ")
 	/*
-	log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
-	fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
+		log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
+		fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	*/
 	fetchSel := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	moveUnsealed := unsealed
