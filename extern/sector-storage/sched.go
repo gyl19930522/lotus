@@ -291,7 +291,7 @@ func (sh *scheduler) diag() SchedDiagInfo {
 
 func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	windows := make([]schedWindow, len(sh.openWindows))
-	acceptableWindows := make([]int, sh.schedQueue.Len())
+	acceptableWindows := make([]int, 0)
 	needRes := ResourceTable[task.taskType][sh.spt]
 
 	for wnd, windowRequest := range sh.openWindows {
@@ -338,6 +338,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	if len(acceptableWindows) == 0 {
 		// cannot find an window for this task, so append it to the task queue for future sched
 		sh.schedQueue.Push(task)
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window selected, now queue length is [%d]",task.sector.Number, task.taskType, sh.schedQueue.Len())
 		return
 	}
 
@@ -346,9 +347,12 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	for _, wnd := range acceptableWindows { 
 		wid := sh.openWindows[wnd].worker
 
+		sh.workersLk.RLock()
 		wr := sh.workers[wid].info.Resources
+		sh.workersLk.RUnlock()
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
 
 		// TODO: allow bigger windows
 		if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
@@ -356,6 +360,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		}
 
 		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("SCHED ASSIGNED sector %d to window %d", task.sector.Number, wnd)
 
 		windows[wnd].allocated.add(wr, needRes)
 
@@ -367,6 +372,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		// all windows full
 		// cannot find an window for this task, so append it to the task queue for future sched
 		sh.schedQueue.Push(task)
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window can handle it, now queue length is [%d]",task.sector.Number, task.taskType, sh.schedQueue.Len())
 		return
 	}
 
@@ -462,14 +468,18 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 
 		wid := windowRequest.worker
 
+		sh.workersLk.RLock()
 		wr := sh.workers[wid].info.Resources
+		sh.workersLk.RUnlock()
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("SCHED try assign sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
 		if !windows.allocated.canHandleRequest(needRes, wid, wr) {
 			continue
 		}
 
 		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("SCHED ASSIGNED sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
 
 		windows.allocated.add(wr, needRes)
 
@@ -483,6 +493,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	if scheduled == 0 {
 		// this window is available for future sched
 		sh.openWindows = append(sh.openWindows, windowRequest)
+		log.Infof("DECENTRAL: no task is assigned on new worker {%d} window", windowRequest.worker)
 		return
 	}
 
