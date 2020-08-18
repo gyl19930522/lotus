@@ -300,7 +300,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		worker := sh.workers[windowRequest.worker]
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -423,7 +423,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		worker := sh.workers[windowRequest.worker]
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -473,7 +473,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		sh.workersLk.RUnlock()
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-		log.Debugf("SCHED try assign sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
+		//log.Debugf("SCHED try assign sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
 		if !windows.allocated.canHandleRequest(needRes, wid, wr) {
 			continue
 		}
