@@ -1,4 +1,4 @@
-module github.com/filecoin-project/storage-fsm
+module github.com/filecoin-project/lotus/extern/storage-sealing
 
 go 1.13
 
@@ -23,6 +23,6 @@ require (
 
 replace github.com/golangci/golangci-lint => github.com/golangci/golangci-lint v1.18.0
 
-replace github.com/filecoin-project/sector-storage => ../sector-storage
+replace github.com/filecoin-project/lotus/extern/sector-storage => ../sector-storage
 
 replace github.com/filecoin-project/filecoin-ffi => ../../../filecoin-ffi

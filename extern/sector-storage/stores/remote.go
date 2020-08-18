@@ -3,10 +3,6 @@ package stores
 import (
 	"context"
 	"encoding/json"
-	"github.com/filecoin-project/sector-storage/fsutil"
-	"github.com/hashicorp/go-multierror"
-	files "github.com/ipfs/go-ipfs-files"
-	"golang.org/x/xerrors"
 	"io/ioutil"
 	"math/bits"
 	"mime"
@@ -17,10 +13,14 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/filecoin-project/lotus/extern/sector-storage/fsutil"
+	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
+	"github.com/filecoin-project/lotus/extern/sector-storage/tarutil"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 
-	"github.com/filecoin-project/sector-storage/storiface"
-	"github.com/filecoin-project/sector-storage/tarutil"
+	"github.com/hashicorp/go-multierror"
+	files "github.com/ipfs/go-ipfs-files"
+	"golang.org/x/xerrors"
 )
 
 var FetchTempSubdir = "fetching"
@@ -160,7 +160,7 @@ func tempFetchDest(spath string, create bool) (string, error) {
 	st, b := filepath.Split(spath)
 	tempdir := filepath.Join(st, FetchTempSubdir)
 	if create {
-		if err := os.MkdirAll(tempdir, 0755); err != nil {
+		if err := os.MkdirAll(tempdir, 0755); err != nil { // nolint
 			return "", xerrors.Errorf("creating temp fetch dir: %w", err)
 		}
 	}
@@ -257,7 +257,7 @@ func (r *Remote) fetch(ctx context.Context, url, outname string) error {
 	if err != nil {
 		return xerrors.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // nolint
 
 	if resp.StatusCode != 200 {
 		return xerrors.Errorf("non-200 code: %d", resp.StatusCode)
@@ -346,7 +346,7 @@ func (r *Remote) deleteFromRemote(ctx context.Context, url string) error {
 	if err != nil {
 		return xerrors.Errorf("do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // nolint
 
 	if resp.StatusCode != 200 {
 		return xerrors.Errorf("non-200 code: %d", resp.StatusCode)
@@ -412,7 +412,7 @@ func (r *Remote) FsStat(ctx context.Context, id ID) (fsutil.FsStat, error) {
 		return fsutil.FsStat{}, xerrors.Errorf("decoding fsstat: %w", err)
 	}
 
-	defer resp.Body.Close()
+	defer resp.Body.Close() // nolint
 
 	return out, nil
 }

@@ -2,17 +2,17 @@ package sectorstorage
 
 import (
 	"context"
-	"io"
-	"net/http"
-
-	"encoding/json"
 	"errors"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"strconv"
+	"io"
+	"net/http" 
+	"io/ioutil" 
+	"os" 
+	"path/filepath" 
+	"strconv" 
+	"encoding/json"
 
-	"github.com/filecoin-project/sector-storage/fsutil"
+	"github.com/filecoin-project/lotus/extern/sector-storage/fsutil"
+
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/mitchellh/go-homedir"
@@ -22,10 +22,10 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-storage/storage"
 
-	"github.com/filecoin-project/sector-storage/ffiwrapper"
-	"github.com/filecoin-project/sector-storage/sealtasks"
-	"github.com/filecoin-project/sector-storage/stores"
-	"github.com/filecoin-project/sector-storage/storiface"
+	"github.com/filecoin-project/lotus/extern/sector-storage/ffiwrapper"
+	"github.com/filecoin-project/lotus/extern/sector-storage/sealtasks"
+	"github.com/filecoin-project/lotus/extern/sector-storage/stores"
+	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
 )
 
 var log = logging.Logger("advmgr")
@@ -86,6 +86,7 @@ type SealerConfig struct {
 	ParallelFetchLimit int
 
 	// Local worker config
+	AllowAddPiece   bool
 	AllowPreCommit1 bool
 	AllowPreCommit2 bool
 	AllowCommit     bool
@@ -124,30 +125,22 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	go m.sched.runSched()
 
 	localTasks := []sealtasks.TaskType{
-		sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
+		sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+	}
+	if sc.AllowAddPiece {
+		localTasks = append(localTasks, sealtasks.TTAddPiece)
 	}
 
-	// localTasks_finalize := []sealtasks.TaskType{
-	// 	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTReadUnsealed,
-	// }
-	// localTasks_addpiece := []sealtasks.TaskType{
-	// 	sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTReadUnsealed,
-	// }
-	// localTasks_fetch := []sealtasks.TaskType{
-	// 	sealtasks.TTCommit1, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
-	// }
 	/*
-		if sc.AllowPreCommit1 {
-			localTasks = append(localTasks, sealtasks.TTPreCommit1)
-		}
-		if sc.AllowPreCommit2 {
-			localTasks = append(localTasks, sealtasks.TTPreCommit2)
-		}
-		if sc.AllowCommit {
-			localTasks = append(localTasks, sealtasks.TTCommit2)
-		}
-		if sc.AllowUnseal {
-			localTasks = append(localTasks, sealtasks.TTUnseal)
+	if sc.AllowPreCommit1 {
+		localTasks = append(localTasks, sealtasks.TTPreCommit1)
+	}
+	if sc.AllowPreCommit2 {
+		localTasks = append(localTasks, sealtasks.TTPreCommit2)
+	}
+	if sc.AllowCommit {
+		localTasks = append(localTasks, sealtasks.TTCommit2)
+	}
 	*/
 	if sc.AllowUnseal {
 		localTasks = append(localTasks, sealtasks.TTUnseal)

@@ -1,4 +1,4 @@
-module github.com/filecoin-project/sector-storage
+module github.com/filecoin-project/lotus/extern/sector-storage
 
 go 1.13
 
@@ -31,6 +31,6 @@ require (
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
 )
 
-replace github.com/filecoin-project/storage-fsm => ../storage-fsm
+replace github.com/filecoin-project/lotus/extern/storage-sealing => ../storage-sealing
 
 replace github.com/filecoin-project/filecoin-ffi => ../../../filecoin-ffi
