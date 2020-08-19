@@ -269,7 +269,7 @@ func (sh *scheduler) diag() SchedDiagInfo {
 		id, err := sh.findSectorGroupId(task.sector)
 
 		if err != nil {
-			log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
+			//log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
 			continue
 			//return
 		}
@@ -298,9 +298,10 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 		sh.workersLk.RLock()
 		worker := sh.workers[windowRequest.worker]
+		wr := worker.info.Resources
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -313,7 +314,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		}
 
 		// TODO: allow bigger windows
-		if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, worker.info.Resources) {
+		if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
 			continue
 		}
 
@@ -344,7 +345,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 	selectedWindow := -1
 
-	for _, wnd := range acceptableWindows { 
+	for _, wnd := range acceptableWindows {
 		wid := sh.openWindows[wnd].worker
 
 		sh.workersLk.RLock()
@@ -352,7 +353,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		sh.workersLk.RUnlock()
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-		log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
+		//log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
 
 		// TODO: allow bigger windows
 		if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
@@ -360,7 +361,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		}
 
 		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-		log.Debugf("SCHED ASSIGNED sector %d to window %d", task.sector.Number, wnd)
+		log.Debugf("SCHED ASSIGNED sector %d to window %d, worker %s", task.sector.Number, wnd, wid)
 
 		windows[wnd].allocated.add(wr, needRes)
 
@@ -423,7 +424,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		worker := sh.workers[windowRequest.worker]
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)

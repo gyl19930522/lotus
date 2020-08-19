@@ -153,11 +153,6 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 		TaskTypes: localTasks,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 
-	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks,
-	}, stor, lstor, si, -1, "NoUse", "NoUse"))
-
 	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 	// 	SealProof: cfg.SealProofType,
 	// 	TaskTypes: localTasks_finalize,
