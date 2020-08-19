@@ -301,7 +301,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		wr := worker.info.Resources
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -339,7 +339,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	if len(acceptableWindows) == 0 {
 		// cannot find an window for this task, so append it to the task queue for future sched
 		sh.schedQueue.Push(task)
-		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window selected, now queue length is [%d]",task.sector.Number, task.taskType, sh.schedQueue.Len())
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window selected, now queue length is [%d]", task.sector.Number, task.taskType, sh.schedQueue.Len())
 		return
 	}
 
@@ -373,7 +373,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		// all windows full
 		// cannot find an window for this task, so append it to the task queue for future sched
 		sh.schedQueue.Push(task)
-		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window can handle it, now queue length is [%d]",task.sector.Number, task.taskType, sh.schedQueue.Len())
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window can handle it, now queue length is [%d]", task.sector.Number, task.taskType, sh.schedQueue.Len())
 		return
 	}
 
@@ -424,7 +424,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		worker := sh.workers[windowRequest.worker]
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
 			if err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -500,7 +500,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 
 	//scheduledWindows := map[int]struct{}{}
 
-	window := windows// copy
+	window := windows // copy
 	select {
 	case windowRequest.done <- &window:
 	default:
@@ -546,7 +546,7 @@ func (sh *scheduler) trySched() {
 			worker := sh.workers[windowRequest.worker]
 			sh.workersLk.RUnlock()
 
-			if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
+			if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 				id, err := sh.findSectorGroupId(task.sector)
 				if err != nil {
 					log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
@@ -628,27 +628,6 @@ func (sh *scheduler) trySched() {
 			wr := sh.workers[wid].info.Resources
 
 			log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-
-			/*
-				sh.workersLk.RLock()
-				wr := sh.workers[wid].info.Resources
-				sh.workersLk.RUnlock()
-				//worker := sh.workers[wid]
-
-				log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-
-				/*
-					if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 || task.taskType == sealtasks.TTCommit2 {
-						id, err := sh.findSectorGroupId(task.sector)
-						if err != nil {
-							log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
-							continue
-						}
-						if id != worker.info.WorkerGroupsId {
-							continue
-						}
-					}
-			*/
 
 			// TODO: allow bigger windows
 			if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
@@ -815,21 +794,6 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 						sh.workersLk.RUnlock()
 						break assignLoop
 					}
-
-					/*
-						if todo.taskType == sealtasks.TTPreCommit2 || todo.taskType == sealtasks.TTCommit1 || todo.taskType == sealtasks.TTCommit2 {
-							id, err := sh.findSectorGroupId(todo.sector)
-							if err != nil {
-								log.Errorf("DECENTRAL: in runWorker - sector %d did not have group: %+v", todo.sector.Number, err)
-								sh.workersLk.RUnlock()
-								break assignLoop
-							}
-							if id != worker.info.WorkerGroupsId {
-								sh.workersLk.RUnlock()
-								break assignLoop
-							}
-						}
-					*/
 
 					log.Debugf("assign worker sector %d", todo.sector.Number)
 					err := sh.assignWorker(taskDone, wid, worker, todo)

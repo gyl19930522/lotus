@@ -62,7 +62,6 @@ func (m *Sealing) PledgeSector() error {
 			return
 		}
 
-
 		//pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
 		log.Infof("DECENTRAL: calling readPiecesJson")
 
@@ -195,23 +194,23 @@ func (m *Sealing) readPiecesJson(ctx context.Context, sectorID abi.SectorID, siz
 		if err != nil {
 			return nil, xerrors.Errorf("save mutualSectorId to %s: %w", mutualSectorIdsFile, err)
 		}
-	}
+	} else {
+		log.Infof("DECENTRAL: reading mutualSectorIdsFile")
+		m.mutualSectorIdsMutex.Lock()
+		b, err := ioutil.ReadFile(mutualSectorIdsFile)
+		m.mutualSectorIdsMutex.Unlock()
+		if err != nil {
+			return nil, xerrors.Errorf("read mutualSectorIdsFile %s: %w", mutualSectorIdsFile, err)
+		}
+		mutualSectorIdString := []byte(string(b) + ";" + strconv.FormatInt(int64(sectorID.Number), 10))
 
-	log.Infof("DECENTRAL: reading mutualSectorIdsFile")
-	m.mutualSectorIdsMutex.Lock()
-	b, err := ioutil.ReadFile(mutualSectorIdsFile)
-	m.mutualSectorIdsMutex.Unlock()
-	if err != nil {
-		return nil, xerrors.Errorf("read mutualSectorIdsFile %s: %w", mutualSectorIdsFile, err)
-	}
-	mutualSectorIdString := []byte(string(b) + ";" + strconv.FormatInt(int64(sectorID.Number), 10))
-
-	log.Infof("DECENTRAL: appending mutualSectorIdsFile")
-	m.mutualSectorIdsMutex.Lock()
-	err = ioutil.WriteFile(mutualSectorIdsFile, mutualSectorIdString, 0777)
-	m.mutualSectorIdsMutex.Unlock()
-	if err != nil {
-		return nil, xerrors.Errorf("save mutualSectorId to %s: %w", mutualSectorIdsFile, err)
+		log.Infof("DECENTRAL: appending mutualSectorIdsFile")
+		m.mutualSectorIdsMutex.Lock()
+		err = ioutil.WriteFile(mutualSectorIdsFile, mutualSectorIdString, 0777)
+		m.mutualSectorIdsMutex.Unlock()
+		if err != nil {
+			return nil, xerrors.Errorf("save mutualSectorId to %s: %w", mutualSectorIdsFile, err)
+		}
 	}
 
 	_, err = m.pledgeSector(ctx, sectorID, []abi.UnpaddedPieceSize{}, size)

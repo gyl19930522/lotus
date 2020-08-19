@@ -2,14 +2,14 @@ package sectorstorage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
-	"net/http" 
-	"io/ioutil" 
-	"os" 
-	"path/filepath" 
-	"strconv" 
-	"encoding/json"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/filecoin-project/lotus/extern/sector-storage/fsutil"
 
@@ -132,15 +132,15 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	}
 
 	/*
-	if sc.AllowPreCommit1 {
-		localTasks = append(localTasks, sealtasks.TTPreCommit1)
-	}
-	if sc.AllowPreCommit2 {
-		localTasks = append(localTasks, sealtasks.TTPreCommit2)
-	}
-	if sc.AllowCommit {
-		localTasks = append(localTasks, sealtasks.TTCommit2)
-	}
+		if sc.AllowPreCommit1 {
+			localTasks = append(localTasks, sealtasks.TTPreCommit1)
+		}
+		if sc.AllowPreCommit2 {
+			localTasks = append(localTasks, sealtasks.TTPreCommit2)
+		}
+		if sc.AllowCommit {
+			localTasks = append(localTasks, sealtasks.TTCommit2)
+		}
 	*/
 	if sc.AllowUnseal {
 		localTasks = append(localTasks, sealtasks.TTUnseal)
@@ -521,14 +521,6 @@ func (m *Manager) SealCommit2(ctx context.Context, sector abi.SectorID, phase1Ou
 		if err != nil {
 			return err
 		}
-
-		if err := handleStoragePath(ctx, sector, w, stores.FTSealed); err != nil {
-			return xerrors.Errorf("handleStoragePath %w", err)
-		}
-		if err := handleStoragePath(ctx, sector, w, stores.FTCache); err != nil {
-			return xerrors.Errorf("handleStoragePath %w", err)
-		}
-
 		out = p
 		return nil
 	})
