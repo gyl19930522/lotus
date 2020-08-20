@@ -88,6 +88,10 @@ func (p *Processor) setupSchemas() error {
 		return err
 	}
 
+	if err := p.setupPower(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -163,6 +167,14 @@ func (p *Processor) Start(ctx context.Context) {
 						return xerrors.Errorf("Failed to handle reward changes: %w", err)
 					}
 					log.Info("Processed Reward Changes")
+					return nil
+				})
+
+				grp.Go(func() error {
+					if err := p.HandlePowerChanges(ctx, actorChanges[builtin.StoragePowerActorCodeID]); err != nil {
+						return xerrors.Errorf("Failed to handle power actor changes: %w", err)
+					}
+					log.Info("Processes Power Changes")
 					return nil
 				})
 
@@ -336,16 +348,19 @@ where rnk <= $1
 		}
 		var c string
 		if err := rows.Scan(&c); err != nil {
-			return nil, xerrors.Errorf("Failed to scan unprocessed blocks: %w", err)
+			log.Errorf("Failed to scan unprocessed blocks: %s", err.Error())
+			continue
 		}
 		ci, err := cid.Parse(c)
 		if err != nil {
-			return nil, xerrors.Errorf("Failed to parse unprocessed blocks: %w", err)
+			log.Errorf("Failed to parse unprocessed blocks: %s", err.Error())
+			continue
 		}
 		bh, err := p.node.ChainGetBlock(ctx, ci)
 		if err != nil {
 			// this is a pretty serious issue.
-			return nil, xerrors.Errorf("Failed to get block header %s: %w", ci.String(), err)
+			log.Errorf("Failed to get block header %s: %s", ci.String(), err.Error())
+			continue
 		}
 		out[ci] = bh
 		if bh.Height < minBlock {

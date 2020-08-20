@@ -105,6 +105,9 @@ var stateMinerInfo = &cli.Command{
 
 		fmt.Printf("Owner:\t%s\n", mi.Owner)
 		fmt.Printf("Worker:\t%s\n", mi.Worker)
+		for i, controlAddress := range mi.ControlAddresses {
+			fmt.Printf("Control %d: \t%s\n", i, controlAddress)
+		}
 		fmt.Printf("PeerID:\t%s\n", mi.PeerId)
 		fmt.Printf("SectorSize:\t%s (%d)\n", types.SizeStr(types.NewInt(uint64(mi.SectorSize))), mi.SectorSize)
 		fmt.Printf("Multiaddrs: \t")
@@ -562,10 +565,30 @@ var stateGetActorCmd = &cli.Command{
 			return err
 		}
 
+		var strtype string
+		switch a.Code {
+		case builtin.AccountActorCodeID:
+			strtype = "account"
+		case builtin.MultisigActorCodeID:
+			strtype = "multisig"
+		case builtin.CronActorCodeID:
+			strtype = "cron"
+		case builtin.InitActorCodeID:
+			strtype = "init"
+		case builtin.StorageMinerActorCodeID:
+			strtype = "miner"
+		case builtin.StorageMarketActorCodeID:
+			strtype = "market"
+		case builtin.StoragePowerActorCodeID:
+			strtype = "power"
+		default:
+			strtype = "unknown"
+		}
+
 		fmt.Printf("Address:\t%s\n", addr)
 		fmt.Printf("Balance:\t%s\n", types.FIL(a.Balance))
 		fmt.Printf("Nonce:\t\t%d\n", a.Nonce)
-		fmt.Printf("Code:\t\t%s\n", a.Code)
+		fmt.Printf("Code:\t\t%s (%s)\n", a.Code, strtype)
 		fmt.Printf("Head:\t\t%s\n", a.Head)
 
 		return nil

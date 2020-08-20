@@ -88,6 +88,8 @@ create table if not exists sector_info
     verified_deal_weight text not null,
     
     initial_pledge text not null,
+	expected_day_reward text not null,
+	expected_storage_pledge text not null,
     
     constraint sector_info_pk
 		primary key (miner_id, sector_id, sealed_cid)
@@ -307,6 +309,7 @@ func (p *Processor) storeMinerPreCommitInfo(ctx context.Context, miners []minerA
 	}
 
 	stmt, err := tx.Prepare(`copy spi (miner_id, sector_id, sealed_cid, state_root, seal_rand_epoch, expiration_epoch, precommit_deposit, precommit_epoch, deal_weight, verified_deal_weight, is_replace_capacity, replace_sector_deadline, replace_sector_partition, replace_sector_number) from STDIN`)
+
 	if err != nil {
 		return xerrors.Errorf("Failed to prepare miner precommit info statement: %w", err)
 	}
@@ -431,7 +434,7 @@ func (p *Processor) storeMinerSectorInfo(ctx context.Context, miners []minerActo
 		return xerrors.Errorf("Failed to create temp table for sector_: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`copy si (miner_id, sector_id, sealed_cid, state_root, activation_epoch, expiration_epoch, deal_weight, verified_deal_weight, initial_pledge) from STDIN`)
+	stmt, err := tx.Prepare(`copy si (miner_id, sector_id, sealed_cid, state_root, activation_epoch, expiration_epoch, deal_weight, verified_deal_weight, initial_pledge, expected_day_reward, expected_storage_pledge) from STDIN`)
 	if err != nil {
 		return xerrors.Errorf("Failed to prepare miner sector info statement: %w", err)
 	}
@@ -463,6 +466,8 @@ func (p *Processor) storeMinerSectorInfo(ctx context.Context, miners []minerActo
 				added.DealWeight.String(),
 				added.VerifiedDealWeight.String(),
 				added.InitialPledge.String(),
+				added.ExpectedDayReward.String(),
+				added.ExpectedStoragePledge.String(),
 			); err != nil {
 				return err
 			}
@@ -879,11 +884,15 @@ func (p *Processor) storeMinersActorInfoState(ctx context.Context, miners []mine
 				return err
 			}
 		}
+		var pid string
+		if mi.PeerId != nil {
+			pid = mi.PeerId.String()
+		}
 		if _, err := stmt.Exec(
 			m.common.addr.String(),
 			mi.Owner.String(),
 			mi.Worker.String(),
-			mi.PeerId.String(),
+			pid,
 			mi.SectorSize.ShortString(),
 		); err != nil {
 			log.Errorw("failed to store miner state", "state", m.state, "info", m.state.Info, "error", err)
