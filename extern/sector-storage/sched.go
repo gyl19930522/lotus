@@ -301,14 +301,17 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		wr := worker.info.Resources
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+		if task.taskType == sealtasks.TTPreCommit1 || task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
-			if err != nil {
+			if task.taskType != sealtasks.TTPreCommit1 && err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
 				// should not sched this errorneous task
 				return
 			}
-			if id != worker.info.WorkerGroupsId {
+			if task.taskType == sealtasks.TTPreCommit1 && id != -2 && id != worker.info.WorkerGroupsId {
+				continue
+			}
+			if task.taskType != sealtasks.TTPreCommit1 && id != worker.info.WorkerGroupsId {
 				continue
 			}
 		}
@@ -424,14 +427,17 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		worker := sh.workers[windowRequest.worker]
 		sh.workersLk.RUnlock()
 
-		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+		if task.taskType == sealtasks.TTPreCommit1 || task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
-			if err != nil {
+			if task.taskType != sealtasks.TTPreCommit1 && err != nil {
 				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
 				// should not sched this errorneous task
 				return
 			}
-			if id != worker.info.WorkerGroupsId {
+			if task.taskType == sealtasks.TTPreCommit1 && id != -2 && id != worker.info.WorkerGroupsId {
+				continue
+			}
+			if task.taskType != sealtasks.TTPreCommit1 && id != worker.info.WorkerGroupsId {
 				continue
 			}
 		}
@@ -546,13 +552,16 @@ func (sh *scheduler) trySched() {
 			worker := sh.workers[windowRequest.worker]
 			sh.workersLk.RUnlock()
 
-			if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+			if task.taskType == sealtasks.TTPreCommit1 || task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 				id, err := sh.findSectorGroupId(task.sector)
-				if err != nil {
+				if task.taskType != sealtasks.TTPreCommit1 && err != nil {
 					log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
 					return
 				}
-				if id != worker.info.WorkerGroupsId {
+				if task.taskType == sealtasks.TTPreCommit1 && id != -2 && id != worker.info.WorkerGroupsId {
+					continue
+				}
+				if task.taskType != sealtasks.TTPreCommit1 && id != worker.info.WorkerGroupsId {
 					continue
 				}
 			}
