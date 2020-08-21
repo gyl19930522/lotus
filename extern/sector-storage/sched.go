@@ -314,6 +314,10 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		}
 
 		// TODO: allow bigger windows
+		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+			continue
+		}
+
 		if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
 			continue
 		}
@@ -346,9 +350,9 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	selectedWindow := -1
 
 	for _, wnd := range acceptableWindows {
-		wid := sh.openWindows[wnd].worker
-
 		sh.workersLk.RLock()
+		wid := sh.openWindows[wnd].worker
+		worker := sh.workers[wid]
 		wr := sh.workers[wid].info.Resources
 		sh.workersLk.RUnlock()
 
@@ -356,6 +360,10 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		//log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
 
 		// TODO: allow bigger windows
+		if !worker.active.canHandleRequest(needRes, wid, wr) {
+			continue
+		}
+
 		if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
 			continue
 		}
@@ -411,7 +419,16 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 }
 
 func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
-	windows := schedWindow{}
+
+	sh.workersLk.RLock()
+	worker := sh.workers[windowRequest.worker]
+	sh.workersLk.RUnlock()
+
+	windows := schedWindow{
+		allocated: *worker.active,
+		todo: make([]*workerRequest, 0),
+	}
+
 	acceptableWindows := make([]int, sh.schedQueue.Len())
 
 	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
@@ -419,10 +436,6 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		needRes := ResourceTable[task.taskType][sh.spt]
 
 		task.indexHeap = sqi
-
-		sh.workersLk.RLock()
-		worker := sh.workers[windowRequest.worker]
-		sh.workersLk.RUnlock()
 
 		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
