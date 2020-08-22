@@ -1,0 +1,47 @@
+2020-08-22T20:49:41.868+0800	[34mINFO[0m	lotus-bench	lotus-bench/main.go:75	Starting lotus-bench
+2020-08-22T20:49:41.868+0800	[34mINFO[0m	lotus-bench	lotus-bench/main.go:488	[1] Writing piece into sector...
+2020-08-22T20:49:41.868+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:66	DECENTRAL ffiwrapper add piece
+2020-08-22T20:49:41.868+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:91	DECENTRAL ffiwrapper add piece - readPathJson
+2020-08-22T20:49:41.868+0800	[33mWARN[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:766	open /home/hunterye/pathConfig.json: no such file or directory
+2020-08-22T20:49:41.893+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:146	DECENTRAL ffiwrapper add piece - stagedFile write
+2020-08-22T20:49:41.893+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:161	DECENTRAL ffiwrapper add piece - append piece cid
+2020-08-22T20:58:04.485+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:199	DECENTRAL ffiwrapper add piece - closing staged file
+2020-08-22T20:58:04.485+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:209	DECENTRAL ffiwrapper add piece - generate unsealed cid
+2020-08-22T20:58:04.491 INFO filcrypto::proofs::api > generate_data_commitment: start
+2020-08-22T20:58:04.491 INFO filecoin_proofs::api::seal > compute_comm_d:start
+2020-08-22T20:58:04.491 INFO filecoin_proofs::pieces > verifying 8192 pieces
+2020-08-22T20:58:04.493 INFO filecoin_proofs::api::seal > compute_comm_d:finish
+2020-08-22T20:58:04.493 INFO filcrypto::proofs::api > generate_data_commitment: finish
+2020-08-22T20:58:04.493+0800	[34mINFO[0m	ffiwrapper	ffiwrapper/sealer_cgo.go:216	DECENTRAL ffiwrapper add piece - cid to commitment
+2020-08-22T20:58:04.493+0800	[34mINFO[0m	lotus-bench	lotus-bench/main.go:522	[1] Running replication(1)...
+2020-08-22T20:58:04.493 INFO filcrypto::proofs::api > seal_pre_commit_phase1: start
+2020-08-22T20:58:04.493 INFO filecoin_proofs::api::seal > seal_pre_commit_phase1: start
+2020-08-22T20:58:04.493 INFO filecoin_proofs::api::seal > using actual sealed data
+2020-08-22T20:58:46.947 INFO filecoin_proofs::api::seal > building merkle tree in memory for the original data
+2020-08-22T20:59:23.244 INFO filecoin_proofs::api::seal > write data_tree from memory to disk
+2020-08-22T21:00:36.730 INFO storage_proofs_porep::stacked::vanilla::proof > replicate_phase1
+2020-08-22T21:00:36.730 INFO storage_proofs_porep::stacked::vanilla::proof > generate labels
+2020-08-22T21:00:36.730 INFO storage_proofs_porep::stacked::vanilla::graph > generate parents locally
+2020-08-22T21:00:41.449 INFO storage_proofs_porep::stacked::vanilla::graph > base parents generated
+2020-08-22T21:03:04.463 INFO storage_proofs_porep::stacked::vanilla::graph > exp parents generated
+2020-08-22T21:03:21.215 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 1, task id: 1
+2020-08-22T21:17:09.202 INFO storage_proofs_porep::stacked::vanilla::proof > storing labels on disk
+2020-08-22T21:17:24.183 INFO storage_proofs_porep::stacked::vanilla::proof > generated layer 1 store with id layer-1
+2020-08-22T21:17:24.183 INFO storage_proofs_porep::stacked::vanilla::proof > setting exp parents
+2020-08-22T21:17:24.183 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 2, task id: 1
+2020-08-22T21:31:05.775 INFO storage_proofs_porep::stacked::vanilla::proof > storing labels on disk
+2020-08-22T21:31:21.084 INFO storage_proofs_porep::stacked::vanilla::proof > generated layer 2 store with id layer-2
+2020-08-22T21:31:21.084 INFO storage_proofs_porep::stacked::vanilla::proof > setting exp parents
+2020-08-22T21:31:21.084 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 3, task id: 1
+2020-08-22T21:44:59.030 INFO storage_proofs_porep::stacked::vanilla::proof > storing labels on disk
+2020-08-22T21:45:14.212 INFO storage_proofs_porep::stacked::vanilla::proof > generated layer 3 store with id layer-3
+2020-08-22T21:45:14.212 INFO storage_proofs_porep::stacked::vanilla::proof > setting exp parents
+2020-08-22T21:45:14.212 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 4, task id: 1
+2020-08-22T21:58:52.281 INFO storage_proofs_porep::stacked::vanilla::proof > storing labels on disk
+2020-08-22T21:59:08.348 INFO storage_proofs_porep::stacked::vanilla::proof > generated layer 4 store with id layer-4
+2020-08-22T21:59:08.348 INFO storage_proofs_porep::stacked::vanilla::proof > setting exp parents
+2020-08-22T21:59:08.348 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 5, task id: 1
+2020-08-22T22:12:46.215 INFO storage_proofs_porep::stacked::vanilla::proof > storing labels on disk
+2020-08-22T22:13:02.075 INFO storage_proofs_porep::stacked::vanilla::proof > generated layer 5 store with id layer-5
+2020-08-22T22:13:02.075 INFO storage_proofs_porep::stacked::vanilla::proof > setting exp parents
+2020-08-22T22:13:02.075 INFO storage_proofs_porep::stacked::vanilla::proof > generating layer: 6, task id: 1

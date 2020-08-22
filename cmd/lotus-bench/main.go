@@ -143,6 +143,14 @@ var sealBenchCmd = &cli.Command{
 			Name:  "parallel",
 			Value: 1,
 		},
+		&cli.IntFlag{
+			Name:  "skip-remove",
+			Value: 0,
+		},
+		&cli.IntFlag{
+			Name:  "skip-p1",
+			Value: 0,
+		},
 	},
 	Action: func(c *cli.Context) error {
 		if c.Bool("no-gpu") {
@@ -167,13 +175,18 @@ var sealBenchCmd = &cli.Command{
 				return xerrors.Errorf("creating sectorbuilder dir: %w", err)
 			}
 
-			tsdir, err := ioutil.TempDir(sdir, "bench")
+			//tsdir, err := ioutil.TempDir(sdir, "bench")
+			tsdir := "~/.lotus-bench/1"
 			if err != nil {
 				return err
 			}
 			defer func() {
-				if err := os.RemoveAll(tsdir); err != nil {
-					log.Warn("remove all: ", err)
+				if c.Bool("skip-remove") {
+					log.Infof("skip remove")
+				} else {
+					if err := os.RemoveAll(tsdir); err != nil {
+						log.Warn("remove all: ", err)
+					}
 				}
 			}()
 
@@ -244,7 +257,7 @@ var sealBenchCmd = &cli.Command{
 				PreCommit2: 1,
 				Commit:     1,
 			}
-			sealTimings, sealedSectors, err = runSeals(sb, sbfs, c.Int("num-sectors"), parCfg, mid, sectorSize, []byte(c.String("ticket-preimage")), c.String("save-commit2-input"), c.Bool("skip-commit2"), c.Bool("skip-unseal"))
+			sealTimings, sealedSectors, err = runSeals(sb, sbfs, c.Int("num-sectors"), parCfg, mid, sectorSize, []byte(c.String("ticket-preimage")), c.String("save-commit2-input"), c.Bool("skip-commit2"), c.Bool("skip-unseal"), c.Bool("skip-p1"))
 			if err != nil {
 				return xerrors.Errorf("failed to run seals: %w", err)
 			}
@@ -462,7 +475,7 @@ type ParCfg struct {
 	Commit     int
 }
 
-func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par ParCfg, mid abi.ActorID, sectorSize abi.SectorSize, ticketPreimage []byte, saveC2inp string, skipc2, skipunseal bool) ([]SealingResult, []abi.SectorInfo, error) {
+func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par ParCfg, mid abi.ActorID, sectorSize abi.SectorSize, ticketPreimage []byte, saveC2inp string, skipc2, skipunseal bool, skipp1 bool) ([]SealingResult, []abi.SectorInfo, error) {
 	var pieces []abi.PieceInfo
 	sealTimings := make([]SealingResult, numSectors)
 	sealedSectors := make([]abi.SectorInfo, numSectors)
@@ -515,12 +528,35 @@ func runSeals(sb *ffiwrapper.Sealer, sbfs *basicfs.Provider, numSectors int, par
 					trand := blake2b.Sum256(ticketPreimage)
 					ticket := abi.SealRandomness(trand[:])
 
+					var pc1o storage.PreCommit1Out
+
 					log.Infof("[%d] Running replication(1)...", i)
-					pieces := []abi.PieceInfo{pieces[ix]}
-					pc1o, err := sb.SealPreCommit1(context.TODO(), sid, ticket, pieces)
-					if err != nil {
-						return xerrors.Errorf("commit: %w", err)
+					if skipp1 {
+						b, err := ioutil.ReadFile("pieces.out")
+						if err != nil {
+							return xerrors.Errorf("reading pieces.out error: %w", err)
+						}
+
+						var pieces []abi.PieceInfo
+						err = json.Unmarshal(b, &pieces)
+
+						pc1o, err = ioutil.ReadFile("pc1o.out")
+						if err != nil {
+							return xerrors.Errorf("reading pc1o.out error: %w", err)
+						}
+					} else {
+						pieces := []abi.PieceInfo{pieces[ix]}
+
+						b, err := json.Marshal(&pieces)
+						err = ioutil.WriteFile("pieces.out", b, 0644)
+
+						pc1o, err := sb.SealPreCommit1(context.TODO(), sid, ticket, pieces)
+						if err != nil {
+							return xerrors.Errorf("commit: %w", err)
+						}
+						err = ioutil.WriteFile("pc1o.out", pc1o, 0644)
 					}
+
 
 					precommit1 := time.Now()
 

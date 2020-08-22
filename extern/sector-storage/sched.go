@@ -374,6 +374,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		windows[wnd].allocated.add(wr, needRes)
 
 		selectedWindow = wnd
+		// one task cannot be scheduled on two windows
 		break
 	}
 
@@ -425,7 +426,13 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	sh.workersLk.RUnlock()
 
 	windows := schedWindow{
-		allocated: *worker.active,
+		allocated: activeResources {
+			memUsedMin: (*worker.active).memUsedMin,
+			memUsedMax: (*worker.active).memUsedMax,
+			gpuUsed: (*worker.active).gpuUsed,
+			cpuUse: (*worker.active).cpuUse,
+			cond: nil,
+		},
 		todo: make([]*workerRequest, 0),
 	}
 
