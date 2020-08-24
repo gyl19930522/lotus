@@ -158,6 +158,7 @@ var sealingJobsCmd = &cli.Command{
 		})
 
 		workerHostnames := map[uint64]string{}
+		workerGroupId := map[uint64]int{}
 
 		wst, err := nodeApi.WorkerStats(ctx)
 		if err != nil {
@@ -166,13 +167,14 @@ var sealingJobsCmd = &cli.Command{
 
 		for wid, st := range wst {
 			workerHostnames[wid] = st.Info.Hostname
+			workerGroupId[wid] = st.Info.WorkerGroupsId
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintf(tw, "ID\tSector\tWorker\tHostname\tTask\tTime\n")
+		_, _ = fmt.Fprintf(tw, "ID\tSector\tWorker\tGroup\tHostname\tTask\tTime\n")
 
 		for _, l := range lines {
-			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerHostnames[l.wid], l.Task.Short(), time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
+			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%d\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerGroupId[l.wid], workerHostnames[l.wid], l.Task.Short(), time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
 		}
 
 		return tw.Flush()

@@ -353,16 +353,15 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		sh.workersLk.RLock()
 		wid := sh.openWindows[wnd].worker
 		worker := sh.workers[wid]
-		wr := sh.workers[wid].info.Resources
+		wr := worker.info.Resources
 		sh.workersLk.RUnlock()
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
 		//log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
 
 		// TODO: allow bigger windows
-		if !worker.active.canHandleRequest(needRes, wid, wr) {
-			continue
-		}
+
+		log.Infof("DECENTRAL trySchedOneTask: worker %d has active resource: %s", wid, (*worker.active))
 
 		if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
 			continue
@@ -421,9 +420,12 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 
+	//windows := schedWindow{}
 	sh.workersLk.RLock()
 	worker := sh.workers[windowRequest.worker]
+	wr := worker.info.Resources
 	sh.workersLk.RUnlock()
+	log.Infof("DECENTRAL trySchedOneWindow: worker %d has active resource: %s", windowRequest.worker, (*worker.active))
 
 	windows := schedWindow{
 		allocated: activeResources {
@@ -457,7 +459,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		}
 
 		// TODO: allow bigger windows
-		if !windows.allocated.canHandleRequest(needRes, windowRequest.worker, worker.info.Resources) {
+		if !windows.allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
 			continue
 		}
 
@@ -500,7 +502,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		}
 
 		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
-		log.Debugf("SCHED ASSIGNED sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
+		log.Debugf("trySchedOneWindow: SCHED ASSIGNED sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
 
 		windows.allocated.add(wr, needRes)
 
@@ -514,7 +516,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	if scheduled == 0 {
 		// this window is available for future sched
 		sh.openWindows = append(sh.openWindows, windowRequest)
-		log.Infof("DECENTRAL: no task is assigned on new worker {%d} window", windowRequest.worker)
+		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window", windowRequest.worker)
 		return
 	}
 
@@ -750,37 +752,19 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 		}()
 
 		for {
-			if wid <= 2 {
-				// for ; windowsRequested < 5; windowsRequested++ {
-				for ; windowsRequested < SchedWindows; windowsRequested++ {
-					select {
-					case sh.windowRequests <- &schedWindowRequest{
-						worker: wid,
-						done:   scheduledWindows,
-					}:
-					case <-sh.closing:
-						return
-					case <-workerClosing:
-						return
-					case <-worker.closingMgr:
-						return
-					}
-				}
-			} else {
-				// ask for more windows if we need them
-				for ; windowsRequested < SchedWindows; windowsRequested++ {
-					select {
-					case sh.windowRequests <- &schedWindowRequest{
-						worker: wid,
-						done:   scheduledWindows,
-					}:
-					case <-sh.closing:
-						return
-					case <-workerClosing:
-						return
-					case <-worker.closingMgr:
-						return
-					}
+			// ask for more windows if we need them
+			for ; windowsRequested < SchedWindows; windowsRequested++ {
+				select {
+				case sh.windowRequests <- &schedWindowRequest{
+					worker: wid,
+					done:   scheduledWindows,
+				}:
+				case <-sh.closing:
+					return
+				case <-workerClosing:
+					return
+				case <-worker.closingMgr:
+					return
 				}
 			}
 
