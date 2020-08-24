@@ -314,10 +314,6 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 		}
 
 		// TODO: allow bigger windows
-		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
-			continue
-		}
-
 		if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
 			continue
 		}
@@ -334,6 +330,17 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 		if !ok {
 			//log.Infof("DECENTRAL: cannot select worker %s for task id %d", windowRequest.worker, task.sector.Number, task.taskType)
+			continue
+		}
+
+		// worker mutex
+		nosched := false
+		worker.lk.Lock()
+		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+			nosched = true
+		}
+		worker.lk.Unlock()
+		if nosched {
 			continue
 		}
 
@@ -427,6 +434,20 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	sh.workersLk.RUnlock()
 	log.Infof("DECENTRAL trySchedOneWindow: worker %d has active resource: %s", windowRequest.worker, (*worker.active))
 
+	// worker mutex
+	/*
+	nosched := 0
+	worker.lk.Lock()
+	if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+		nosched = 1
+	}
+	worker.lk.Unlock()
+	if nosched {
+		continue
+	}
+	*/
+
+
 	windows := schedWindow{
 		allocated: activeResources {
 			memUsedMin: (*worker.active).memUsedMin,
@@ -476,6 +497,20 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 			continue
 		}
 
+		// worker mutex
+		/*
+		nosched := false
+		worker.lk.Lock()
+		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+			nosched = true
+		}
+		worker.lk.Unlock()
+		if nosched {
+			continue
+		}
+		*/
+
+
 		acceptableWindows[sqi] = 1
 	}
 
@@ -511,12 +546,24 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		sh.schedQueue.Remove(sqi)
 		sqi--
 		scheduled++
+		//break;
 	}
 
 	if scheduled == 0 {
 		// this window is available for future sched
-		sh.openWindows = append(sh.openWindows, windowRequest)
-		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window", windowRequest.worker)
+		exist := false
+		for i := 0; i < len(sh.openWindows); i++ {
+			if sh.openWindows[i].worker == windowRequest.worker {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			sh.openWindows = append(sh.openWindows, windowRequest)
+			log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on worker {%d} window, no append due to window already exists", windowRequest.worker)
+		} else {
+			log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window", windowRequest.worker)
+		}
 		return
 	}
 
@@ -759,6 +806,7 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 					worker: wid,
 					done:   scheduledWindows,
 				}:
+
 				case <-sh.closing:
 					return
 				case <-workerClosing:
@@ -773,6 +821,10 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 				activeWindows = append(activeWindows, w)
 			case <-taskDone:
 				log.Debugw("task done", "workerid", wid)
+				sh.windowRequests <- &schedWindowRequest{
+					worker: wid,
+					done:   scheduledWindows,
+				}
 			case <-sh.closing:
 				return
 			case <-workerClosing:
@@ -795,6 +847,7 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 					worker.lk.Unlock()
 
 					if !ok {
+						log.Infof("DECENTRAL: in runWorker, cannot prepare resource for request %d", todo.sector.Number)
 						sh.workersLk.RUnlock()
 						break assignLoop
 					}
@@ -861,14 +914,17 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 			sh.workersLk.Unlock()
 			defer sh.workersLk.Lock() // we MUST return locked from this function
 
+
+			//log.Infof("DECENTRAL: in assign worker, now working on task %d", req.sector)
+			err = req.work(req.ctx, w.wt.worker(w.w))
+			log.Infof("DECENTRAL: assign worker done on task %d", req.sector)
+
 			select {
 			case taskDone <- struct{}{}:
 			case <-sh.closing:
 			}
-
-			err = req.work(req.ctx, w.wt.worker(w.w))
-
 			select {
+			//case req.ret <- workerResponse{err: err}: taskDone <- struct{}{}
 			case req.ret <- workerResponse{err: err}:
 			case <-req.ctx.Done():
 				log.Warnf("request got cancelled before we could respond")
