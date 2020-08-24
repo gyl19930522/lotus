@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
+	//"math/rand"
 	"path/filepath"
-	"sort"
+	//"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -607,7 +607,7 @@ func (sh *scheduler) trySched() {
 	*/
 
 	windows := make([]schedWindow, len(sh.openWindows))
-	acceptableWindows := make([][]int, sh.schedQueue.Len())
+	//acceptableWindows := make([][]int, sh.schedQueue.Len())
 
 	log.Debugf("SCHED %d queued; %d open windows", sh.schedQueue.Len(), len(windows))
 
@@ -624,6 +624,7 @@ func (sh *scheduler) trySched() {
 	}
 	*/
 
+	/*
 	// Step 1
 	concurrency := len(sh.openWindows)
 	throttle := make(chan struct{}, concurrency)
@@ -679,7 +680,6 @@ func (sh *scheduler) trySched() {
 			if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, worker.info.Resources) {
 				continue
 			}
-			/*
 				// TODO: allow bigger windows
 				if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, worker.info.Resources) {
 					continue
@@ -692,7 +692,6 @@ func (sh *scheduler) trySched() {
 					log.Errorf("trySched(1) req.sel.Ok error: %+v", err)
 					continue
 				}
-				*/
 
 				if !ok {
 					continue
@@ -735,17 +734,17 @@ func (sh *scheduler) trySched() {
 				}
 				return r
 			})
-		}(i)
+		}
+		//}(i)
 	}
 
 	// log.Debugf("SCHED windows: %+v", windows)
 	// log.Debugf("SCHED Acceptable win: %+v", acceptableWindows)
-	/*
+
 	wg.Wait()
 
 	log.Debugf("SCHED windows: %+v", windows)
 	log.Debugf("SCHED Acceptable win: %+v", acceptableWindows)
-	*/
 
 	// Step 2
 	scheduled := 0
@@ -822,6 +821,7 @@ func (sh *scheduler) trySched() {
 	}
 
 	sh.openWindows = newOpenWindows
+	*/
 }
 
 func (sh *scheduler) runWorker(wid WorkerID) {
