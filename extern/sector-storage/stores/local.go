@@ -95,6 +95,7 @@ func (p *path) stat(ls LocalStorage) (fsutil.FsStat, error) {
 			sp := p.sectorPath(id, fileType)
 
 			used, err := ls.DiskUsage(sp)
+			/*
 			if err == os.ErrNotExist {
 				p, ferr := tempFetchDest(sp, false)
 				if ferr != nil {
@@ -103,6 +104,7 @@ func (p *path) stat(ls LocalStorage) (fsutil.FsStat, error) {
 
 				used, err = ls.DiskUsage(p)
 			}
+			*/
 			if err != nil {
 				log.Errorf("getting disk usage of '%s': %+v", p.sectorPath(id, fileType), err)
 				continue
@@ -193,9 +195,11 @@ func (st *Local) OpenPath(ctx context.Context, p string) error {
 		}
 
 		for _, ent := range ents {
+			/*
 			if ent.Name() == FetchTempSubdir {
 				continue
 			}
+			*/
 
 			sid, err := ParseSectorID(ent.Name())
 			if err != nil {

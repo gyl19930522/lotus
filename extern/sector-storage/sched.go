@@ -3,10 +3,15 @@ package sectorstorage
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/filecoin-project/sector-storage/stores"
 
 	"golang.org/x/xerrors"
 
@@ -23,7 +28,7 @@ var DefaultSchedPriority = 0
 var SelectorTimeout = 5 * time.Second
 
 var (
-	SchedWindows = 2
+	SchedWindows = 1
 )
 
 func getPriority(ctx context.Context) int {
@@ -73,6 +78,9 @@ type scheduler struct {
 	closing  chan struct{}
 	closed   chan struct{}
 	testSync chan struct{} // used for testing
+
+	sectorGroupIds map[abi.SectorID]int
+	mutualPathMap  map[int]string
 }
 
 type workerHandle struct {
@@ -155,6 +163,9 @@ func newScheduler(spt abi.RegisteredSealProof) *scheduler {
 
 		closing: make(chan struct{}),
 		closed:  make(chan struct{}),
+
+		sectorGroupIds: map[abi.SectorID]int{},
+		mutualPathMap:  map[int]string{},
 	}
 }
 
@@ -202,6 +213,7 @@ type SchedDiagRequestInfo struct {
 	Sector   abi.SectorID
 	TaskType sealtasks.TaskType
 	Priority int
+	GroupID  int
 }
 
 type SchedDiagInfo struct {
@@ -223,15 +235,18 @@ func (sh *scheduler) runSched() {
 			sh.dropWorker(wid)
 
 		case req := <-sh.schedule:
-			sh.schedQueue.Push(req)
-			sh.trySched()
+			sh.trySchedOneTask(req)
+			// sh.schedQueue.Push(req)
+			// sh.trySched()
 
 			if sh.testSync != nil {
 				sh.testSync <- struct{}{}
 			}
 		case req := <-sh.windowRequests:
-			sh.openWindows = append(sh.openWindows, req)
-			sh.trySched()
+			//sh.openWindows = append(sh.openWindows, req)
+			sh.trySchedOneWindow(req)
+			// save it
+			// sh.trySched()
 
 		case ireq := <-sh.info:
 			ireq(sh.diag())
@@ -246,13 +261,24 @@ func (sh *scheduler) runSched() {
 func (sh *scheduler) diag() SchedDiagInfo {
 	var out SchedDiagInfo
 
+	log.Infof("DECENTRAL: in sector-storage, sched diag info")
+
 	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
 		task := (*sh.schedQueue)[sqi]
+
+		id, err := sh.findSectorGroupId(task.sector)
+
+		if err != nil {
+			//log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
+			continue
+			//return
+		}
 
 		out.Requests = append(out.Requests, SchedDiagRequestInfo{
 			Sector:   task.sector,
 			TaskType: task.taskType,
 			Priority: task.priority,
+			GroupID:  id,
 		})
 	}
 
@@ -261,6 +287,260 @@ func (sh *scheduler) diag() SchedDiagInfo {
 	}
 
 	return out
+}
+
+func (sh *scheduler) trySchedOneTask(task *workerRequest) {
+	windows := make([]schedWindow, len(sh.openWindows))
+	acceptableWindows := make([]int, 0)
+	needRes := ResourceTable[task.taskType][sh.spt]
+
+	for wnd, windowRequest := range sh.openWindows {
+
+		sh.workersLk.RLock()
+		worker, ok := sh.workers[windowRequest.worker]
+		wr := worker.info.Resources
+		sh.workersLk.RUnlock()
+		if !ok {
+			log.Errorf("worker referenced by windowRequest not found (worker: %d)", windowRequest.worker)
+			// TODO: How to move forward here?
+			continue
+		}
+
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+			id, err := sh.findSectorGroupId(task.sector)
+			if err != nil {
+				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
+				// should not sched this errorneous task
+				return
+			}
+			if id != worker.info.WorkerGroupsId {
+				continue
+			}
+		}
+
+		// TODO: allow bigger windows
+		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+			continue
+		}
+
+		if !windows[wnd].allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
+			continue
+		}
+
+		rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
+		ok, err := task.sel.Ok(rpcCtx, task.taskType, sh.spt, worker)
+		cancel()
+		if err != nil {
+			log.Errorf("trySched(1) req.sel.Ok error: %+v", err)
+			continue
+		}
+
+		//task.sel.updateExistingSelector(rpcCtx, manager.ReturnIndex(), task.sector.Number, true)
+
+		if !ok {
+			//log.Infof("DECENTRAL: cannot select worker %s for task id %d", windowRequest.worker, task.sector.Number, task.taskType)
+			continue
+		}
+
+		acceptableWindows = append(acceptableWindows, wnd)
+	}
+
+	if len(acceptableWindows) == 0 {
+		// cannot find an window for this task, so append it to the task queue for future sched
+		sh.schedQueue.Push(task)
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window selected, now queue length is [%d]", task.sector.Number, task.taskType, sh.schedQueue.Len())
+		return
+	}
+
+	selectedWindow := -1
+
+	for _, wnd := range acceptableWindows {
+		sh.workersLk.RLock()
+		wid := sh.openWindows[wnd].worker
+		worker := sh.workers[wid]
+		wr := worker.info.Resources
+		sh.workersLk.RUnlock()
+
+		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		//log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
+
+		// TODO: allow bigger windows
+
+		log.Infof("DECENTRAL trySchedOneTask: worker %d has active resource: %s", wid, (*worker.active))
+
+		if !windows[wnd].allocated.canHandleRequest(needRes, wid, wr) {
+			continue
+		}
+
+		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("SCHED ASSIGNED sector %d to window %d, worker %s", task.sector.Number, wnd, wid)
+
+		windows[wnd].allocated.add(wr, needRes)
+
+		selectedWindow = wnd
+		// one task cannot be scheduled on two windows
+		break
+	}
+
+	if selectedWindow < 0 {
+		// all windows full
+		// cannot find an window for this task, so append it to the task queue for future sched
+		sh.schedQueue.Push(task)
+		log.Infof("DECENTRAL: pushing sector %d {task %s} due to no window can handle it, now queue length is [%d]", task.sector.Number, task.taskType, sh.schedQueue.Len())
+		return
+	}
+
+	windows[selectedWindow].todo = append(windows[selectedWindow].todo, task)
+
+	scheduledWindows := map[int]struct{}{}
+	for wnd, window := range windows {
+		if len(window.todo) == 0 {
+			// Nothing scheduled here, keep the window open
+			continue
+		}
+
+		scheduledWindows[wnd] = struct{}{}
+
+		window := window // copy
+		select {
+		case sh.openWindows[wnd].done <- &window:
+		default:
+			log.Error("expected sh.openWindows[wnd].done to be buffered")
+		}
+	}
+
+	// Rewrite sh.openWindows array, removing scheduled windows
+	newOpenWindows := make([]*schedWindowRequest, 0, len(sh.openWindows)-len(scheduledWindows))
+	for wnd, window := range sh.openWindows {
+		if _, scheduled := scheduledWindows[wnd]; scheduled {
+			// keep unscheduled windows open
+			continue
+		}
+
+		newOpenWindows = append(newOpenWindows, window)
+	}
+
+	sh.openWindows = newOpenWindows
+}
+
+func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
+
+	//windows := schedWindow{}
+	sh.workersLk.RLock()
+	worker, ok := sh.workers[windowRequest.worker]
+	wr := worker.info.Resources
+	sh.workersLk.RUnlock()
+
+	if !ok {
+		// TODO: How to move forward here?
+		sh.openWindows = append(sh.openWindows, windowRequest)
+		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window, due to worker missing", windowRequest.worker)
+		return
+	}
+
+	log.Infof("DECENTRAL trySchedOneWindow: worker %d has active resource: %s", windowRequest.worker, (*worker.active))
+
+
+	windows := schedWindow{
+		allocated: activeResources {
+			memUsedMin: (*worker.active).memUsedMin,
+			memUsedMax: (*worker.active).memUsedMax,
+			gpuUsed: (*worker.active).gpuUsed,
+			cpuUse: (*worker.active).cpuUse,
+			cond: nil,
+		},
+		todo: make([]*workerRequest, 0),
+	}
+
+	acceptableWindows := make([]int, sh.schedQueue.Len())
+
+	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
+		task := (*sh.schedQueue)[sqi]
+		needRes := ResourceTable[task.taskType][sh.spt]
+
+		task.indexHeap = sqi
+		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+			id, err := sh.findSectorGroupId(task.sector)
+			if err != nil {
+				log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
+				// should not sched this errorneous task
+				return
+			}
+			if id != worker.info.WorkerGroupsId {
+				continue
+			}
+		}
+
+		// TODO: allow bigger windows
+		if !windows.allocated.canHandleRequest(needRes, windowRequest.worker, wr) {
+			continue
+		}
+
+		rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
+		ok, err := task.sel.Ok(rpcCtx, task.taskType, sh.spt, worker)
+		cancel()
+		if err != nil {
+			log.Errorf("trySched(1) req.sel.Ok error: %+v", err)
+			continue
+		}
+
+		if !ok {
+			//log.Infof("DECENTRAL: cannot select worker %s for task id %d", windowRequest.worker, task.sector.Number, task.taskType)
+			continue
+		}
+
+		acceptableWindows[sqi] = 1
+	}
+
+	scheduled := 0
+
+	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
+		task := (*sh.schedQueue)[sqi]
+		needRes := ResourceTable[task.taskType][sh.spt]
+
+		if acceptableWindows[task.indexHeap] != 1 {
+			continue
+		}
+
+		wid := windowRequest.worker
+
+		sh.workersLk.RLock()
+		wr := sh.workers[wid].info.Resources
+		sh.workersLk.RUnlock()
+
+		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		//log.Debugf("SCHED try assign sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
+		if !windows.allocated.canHandleRequest(needRes, wid, wr) {
+			continue
+		}
+
+		//log.Debugf("SCHED ASSIGNED sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
+		log.Debugf("trySchedOneWindow: SCHED ASSIGNED sqi:%d sector %d to new worker {%d} window", sqi, task.sector.Number, wid)
+
+		windows.allocated.add(wr, needRes)
+
+		windows.todo = append(windows.todo, task)
+
+		sh.schedQueue.Remove(sqi)
+		sqi--
+		scheduled++
+	}
+
+	if scheduled == 0 {
+		// this window is available for future sched
+		sh.openWindows = append(sh.openWindows, windowRequest)
+		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window", windowRequest.worker)
+		return
+	}
+
+	//scheduledWindows := map[int]struct{}{}
+
+	window := windows // copy
+	select {
+	case windowRequest.done <- &window:
+	default:
+		log.Error("expected sh.openWindows[wnd].done to be buffered")
+	}
 }
 
 func (sh *scheduler) trySched() {
@@ -285,8 +565,9 @@ func (sh *scheduler) trySched() {
 
 	log.Debugf("SCHED %d queued; %d open windows", sh.schedQueue.Len(), len(windows))
 
-	sh.workersLk.RLock()
-	defer sh.workersLk.RUnlock()
+	// very dangerous
+	//sh.workersLk.RLock()
+	//defer sh.workersLk.RUnlock()
 
 	// Step 1
 	for sqi := 0; sqi < sh.schedQueue.Len(); sqi++ {
@@ -295,11 +576,25 @@ func (sh *scheduler) trySched() {
 
 		task.indexHeap = sqi
 		for wnd, windowRequest := range sh.openWindows {
+			sh.workersLk.RLock()
 			worker, ok := sh.workers[windowRequest.worker]
+			sh.workersLk.RUnlock()
 			if !ok {
 				log.Errorf("worker referenced by windowRequest not found (worker: %d)", windowRequest.worker)
 				// TODO: How to move forward here?
 				continue
+			}
+
+
+			if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
+				id, err := sh.findSectorGroupId(task.sector)
+				if err != nil {
+					log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
+					return
+				}
+				if id != worker.info.WorkerGroupsId {
+					continue
+				}
 			}
 
 			// TODO: allow bigger windows
@@ -315,7 +610,10 @@ func (sh *scheduler) trySched() {
 				continue
 			}
 
+			//task.sel.updateExistingSelector(rpcCtx, manager.ReturnIndex(), task.sector.Number, true)
+
 			if !ok {
+				//log.Infof("DECENTRAL: cannot select worker %s for task id %d", windowRequest.worker, task.sector.Number, task.taskType)
 				continue
 			}
 
@@ -353,8 +651,8 @@ func (sh *scheduler) trySched() {
 		})
 	}
 
-	log.Debugf("SCHED windows: %+v", windows)
-	log.Debugf("SCHED Acceptable win: %+v", acceptableWindows)
+	// log.Debugf("SCHED windows: %+v", windows)
+	// log.Debugf("SCHED Acceptable win: %+v", acceptableWindows)
 
 	// Step 2
 	scheduled := 0
@@ -366,6 +664,7 @@ func (sh *scheduler) trySched() {
 		selectedWindow := -1
 		for _, wnd := range acceptableWindows[task.indexHeap] {
 			wid := sh.openWindows[wnd].worker
+
 			wr := sh.workers[wid].info.Resources
 
 			log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
@@ -705,4 +1004,24 @@ func (sh *scheduler) Close(ctx context.Context) error {
 		return ctx.Err()
 	}
 	return nil
+}
+
+func (sh *scheduler) findSectorGroupId(sector abi.SectorID) (int, error) {
+	path, err := readPathJson()
+	if err != nil {
+		return -2, xerrors.Errorf("read pathConfig.json: %w", err)
+	}
+
+	idFile := filepath.Join(path.StorageRepoPath, stores.FTCache.String(), stores.SectorName(sector), "sectorGroupId")
+	b, err := ioutil.ReadFile(idFile)
+	if err != nil {
+		return -2, xerrors.Errorf("read sectorGroupId %s: %w", idFile, err)
+	}
+
+	id, err := strconv.Atoi(string(b))
+	if err != nil {
+		return -2, xerrors.Errorf("convert string to int: %w", err)
+	}
+
+	return id, nil
 }

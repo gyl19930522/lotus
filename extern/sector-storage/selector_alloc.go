@@ -2,7 +2,6 @@ package sectorstorage
 
 import (
 	"context"
-
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -17,7 +16,7 @@ type allocSelector struct {
 	ptype stores.PathType
 }
 
-func newAllocSelector(index stores.SectorIndex, alloc stores.SectorFileType, ptype stores.PathType) *allocSelector {
+func newAllocSelector(ctx context.Context, index stores.SectorIndex, alloc stores.SectorFileType, ptype stores.PathType) *allocSelector {
 	return &allocSelector{
 		index: index,
 		alloc: alloc,
@@ -54,6 +53,7 @@ func (s *allocSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi
 			return true, nil
 		}
 	}
+	//log.Infof("in selector alloc, can't find best")
 
 	return false, nil
 }

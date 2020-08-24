@@ -62,7 +62,7 @@ func (a *activeResources) canHandleRequest(needRes Resources, wid WorkerID, res 
 	}
 
 	maxNeedMem := res.MemReserved + a.memUsedMax + needRes.MaxMemory + needRes.BaseMinMemory
-
+	// log.Debug("worker %d. res.MemReserved %d, a.memUsedMin %d, needRes.MinMemory %d, needRes.BaseMinMemory %d", wid, res.MemReserved, a.memUsedMax, needRes.MaxMemory, needRes.BaseMinMemory)
 	if maxNeedMem > res.MemSwap+res.MemPhysical {
 		log.Debugf("sched: not scheduling on worker %d; not enough virtual memory - need: %dM, have %dM", wid, maxNeedMem/mib, (res.MemSwap+res.MemPhysical)/mib)
 		return false

@@ -6,19 +6,24 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"io"
-	"math/bits"
-	"os"
-	"runtime"
-
-	"github.com/ipfs/go-cid"
-	"golang.org/x/xerrors"
-
+	"encoding/json"
 	ffi "github.com/filecoin-project/filecoin-ffi"
 	rlepluslazy "github.com/filecoin-project/go-bitfield/rle"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	"github.com/filecoin-project/specs-storage/storage"
+	"github.com/ipfs/go-cid"
+	"github.com/mitchellh/go-homedir"
+	"golang.org/x/xerrors"
+	"io"
+	"io/ioutil"
+	"math/bits"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/filecoin-project/lotus/extern/sector-storage/fr32"
 	"github.com/filecoin-project/lotus/extern/sector-storage/stores"
@@ -58,6 +63,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		offset += size
 	}
 
+	log.Infof("DECENTRAL ffiwrapper add piece")
 	maxPieceSize := abi.PaddedPieceSize(sb.ssize)
 
 	if offset.Padded()+pieceSize.Padded() > maxPieceSize {
@@ -81,6 +87,40 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 	}()
 
 	var stagedPath stores.SectorPaths
+
+	log.Infof("DECENTRAL ffiwrapper add piece - readPathJson")
+	path, err := readPathJson()
+	if err != nil && !os.IsNotExist(err) {
+		log.Errorf("%+v", err)
+		return abi.PieceInfo{}, xerrors.Errorf("read path config file: %w", err)
+	}
+
+	if !os.IsNotExist(err) {
+		mutualSectorIdsFile := filepath.Join(path.StorageRepoPath, "mutualSectorIds")
+
+		log.Infof("DECENTRAL ffiwrapper add piece - isMutualSector")
+		flag, err := IsMutualSector(int64(sector.Number), mutualSectorIdsFile)
+		if err != nil {
+			return abi.PieceInfo{}, err
+		}
+		if flag {
+			if len(existingPieceSizes) == 0 {
+				log.Infof("DECENTRAL ffiwrapper add piece - acquireSector when piece=0")
+				stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
+				if err != nil {
+					return abi.PieceInfo{}, xerrors.Errorf("acquire unsealed sector: %w", err)
+				}
+			} else {
+				log.Infof("DECENTRAL ffiwrapper add piece - acquireSector when piece/=0")
+				stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, stores.FTUnsealed, 0, stores.PathSealing)
+				if err != nil {
+					return abi.PieceInfo{}, xerrors.Errorf("acquire unsealed sector: %w", err)
+				}
+			}
+			return abi.PieceInfo{}, nil
+		}
+	}
+
 	if len(existingPieceSizes) == 0 {
 		stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
 		if err != nil {
@@ -103,6 +143,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		}
 	}
 
+	log.Infof("DECENTRAL ffiwrapper add piece - stagedFile write")
 	w, err := stagedFile.Writer(storiface.UnpaddedByteIndex(offset).Padded(), pieceSize.Padded())
 	if err != nil {
 		return abi.PieceInfo{}, xerrors.Errorf("getting partial file writer: %w", err)
@@ -117,6 +158,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 	buf := make([]byte, chunk.Unpadded())
 	var pieceCids []abi.PieceInfo
 
+	log.Infof("DECENTRAL ffiwrapper add piece - append piece cid")
 	for {
 		var read int
 		for rbuf := buf; len(rbuf) > 0; {
@@ -154,6 +196,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		return abi.PieceInfo{}, xerrors.Errorf("marking data range as allocated: %w", err)
 	}
 
+	log.Infof("DECENTRAL ffiwrapper add piece - closing staged file")
 	if err := stagedFile.Close(); err != nil {
 		return abi.PieceInfo{}, err
 	}
@@ -163,12 +206,14 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		return pieceCids[0], nil
 	}
 
+	log.Infof("DECENTRAL ffiwrapper add piece - generate unsealed cid")
 	pieceCID, err := ffi.GenerateUnsealedCID(sb.sealProofType, pieceCids)
 	if err != nil {
 		return abi.PieceInfo{}, xerrors.Errorf("generate unsealed CID: %w", err)
 	}
 
 	// validate that the pieceCID was properly formed
+	log.Infof("DECENTRAL ffiwrapper add piece - cid to commitment")
 	if _, err := commcid.CIDToPieceCommitmentV1(pieceCID); err != nil {
 		return abi.PieceInfo{}, err
 	}
@@ -410,6 +455,16 @@ func (sb *Sealer) ReadPiece(ctx context.Context, writer io.Writer, sector abi.Se
 }
 
 func (sb *Sealer) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo) (out storage.PreCommit1Out, err error) {
+	fs := syscall.Statfs_t{}
+	if err := syscall.Statfs("/", &fs); err != nil {
+		return nil, xerrors.Errorf("getting local space failed: %w", err)
+	}
+	diskFree := fs.Bfree * uint64(fs.Bsize)
+	diskNeed := uint64(56 << 30)
+	if diskFree <= diskNeed {
+		return nil, xerrors.Errorf("out of local space (available: %d, need: %d): %w", diskFree, diskNeed, err)
+	}
+
 	paths, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTUnsealed, stores.FTSealed|stores.FTCache, stores.PathSealing)
 	if err != nil {
 		return nil, xerrors.Errorf("acquiring sector paths: %w", err)
@@ -521,6 +576,7 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 
 		sr := pieceRun(0, maxPieceSize)
 
+		log.Debugf("DECENTRAL: ffiwrapper keepUnsealed check")
 		for _, s := range keepUnsealed {
 			si := &rlepluslazy.RunSliceIterator{}
 			if s.Offset != 0 {
@@ -535,17 +591,20 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 			}
 		}
 
+		log.Debugf("DECENTRAL: ffiwrapper acquiring sector")
 		paths, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTUnsealed, 0, stores.PathStorage)
 		if err != nil {
 			return xerrors.Errorf("acquiring sector cache path: %w", err)
 		}
 		defer done()
 
+		log.Debugf("DECENTRAL: ffiwrapper opening partial file")
 		pf, err := openPartialFile(maxPieceSize, paths.Unsealed)
 		if xerrors.Is(err, os.ErrNotExist) {
 			return xerrors.Errorf("opening partial file: %w", err)
 		}
 
+		log.Debugf("DECENTRAL: ffiwrapper sr partial file free")
 		var at uint64
 		for sr.HasNext() {
 			r, err := sr.NextRun()
@@ -572,12 +631,14 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		}
 	}
 
+	log.Debugf("DECENTRAL: ffiwrapper acquiring sector when keepUnsealed <= 0")
 	paths, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTCache, 0, stores.PathStorage)
 	if err != nil {
 		return xerrors.Errorf("acquiring sector cache path: %w", err)
 	}
 	defer done()
 
+	log.Debugf("DECENTRAL: ffiwrapper clearing cache")
 	return ffi.ClearCache(uint64(sb.ssize), paths.Cache)
 }
 
@@ -670,4 +731,64 @@ func GenerateUnsealedCID(proofType abi.RegisteredSealProof, pieces []abi.PieceIn
 	}
 
 	return ffi.GenerateUnsealedCID(proofType, allPieces)
+}
+
+func IsMutualSector(sectorId int64, mutualSectorIdsFile string) (bool, error) {
+	b, err := ioutil.ReadFile(mutualSectorIdsFile)
+	if err != nil {
+		return false, xerrors.Errorf("read mutualSectorIdsFile %s: %w", mutualSectorIdsFile, err)
+	}
+
+	mutualSectorIdString := string(b)
+	mutualSectorIdS := strings.Split(mutualSectorIdString, ";")
+	for _, idStr := range mutualSectorIdS {
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return false, xerrors.Errorf("read mutual sector ids file %s: %w", mutualSectorIdsFile, err)
+		}
+		if id == sectorId {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func readPathJson() (pathConfig, error) {
+	pathFile, err := homedir.Expand("~/pathConfig.json")
+	if err != nil {
+		log.Errorf("%+v", err)
+		return pathConfig{}, err
+	}
+
+	pathData, err := os.Open(pathFile)
+	if err != nil {
+		log.Warnf("%+v", err)
+		return pathConfig{}, err
+	}
+	defer func() {
+		if err := pathData.Close(); err != nil {
+			log.Warnf("pathConfig.json ile d failed: %w", err)
+		}
+	}()
+
+	data := make([]byte, 2000)
+	n, err := pathData.Read(data)
+	if err != nil {
+		log.Errorf("%+v", err)
+		return pathConfig{}, err
+	}
+
+	var path pathConfig
+	if err := json.Unmarshal(data[:n], &path); err != nil {
+		log.Errorf("%+v", err)
+		return pathConfig{}, err
+	}
+
+	return path, nil
+}
+
+type pathConfig struct {
+	MinerId         string
+	StorageRepoPath string
 }

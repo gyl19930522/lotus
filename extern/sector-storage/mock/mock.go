@@ -292,7 +292,7 @@ func (mgr *SectorMgr) GenerateWindowPoSt(ctx context.Context, minerID abi.ActorI
 }
 
 func generateFakePoSt(sectorInfo []abi.SectorInfo, rpt func(abi.RegisteredSealProof) (abi.RegisteredPoStProof, error), randomness abi.PoStRandomness) []abi.PoStProof {
-	sectors := bitfield.New()
+	sectors := abi.NewBitField()
 	for _, info := range sectorInfo {
 		sectors.Set(uint64(info.SectorNumber))
 	}
@@ -416,12 +416,12 @@ func (m mockVerif) VerifyWindowPoSt(ctx context.Context, info abi.WindowPoStVeri
 		return false, xerrors.Errorf("bad randomness")
 	}
 
-	sectors := bitfield.New()
+	sectors := abi.NewBitField()
 	if err := sectors.UnmarshalCBOR(bytes.NewReader(proof.ProofBytes[len(info.Randomness):])); err != nil {
 		return false, xerrors.Errorf("unmarshaling sectors bitfield from \"proof\": %w", err)
 	}
 
-	challenged := bitfield.New()
+	challenged := abi.NewBitField()
 	for _, sector := range info.ChallengedSectors {
 		challenged.Set(uint64(sector.SectorNumber))
 	}

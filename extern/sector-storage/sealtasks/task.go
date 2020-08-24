@@ -19,8 +19,10 @@ const (
 var order = map[TaskType]int{
 	TTAddPiece:     7,
 	TTPreCommit1:   6,
-	TTPreCommit2:   5,
-	TTCommit2:      4,
+	TTCommit2:      5,
+	TTPreCommit2:   4,
+	//TTPreCommit2:   5,
+	//TTCommit2:      4,
 	TTCommit1:      3,
 	TTFetch:        2,
 	TTFinalize:     1,

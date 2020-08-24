@@ -36,6 +36,10 @@ func (m *Miner) PledgeSector() error {
 	return m.sealing.PledgeSector()
 }
 
+func (m *Miner) MutualSector(storageRepoPath string) error {
+	return m.sealing.MutualSector(storageRepoPath)
+}
+
 func (m *Miner) ForceSectorState(ctx context.Context, id abi.SectorNumber, state sealing.SectorState) error {
 	return m.sealing.ForceSectorState(ctx, id, state)
 }

@@ -26,6 +26,8 @@ func (s *taskSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi.
 	}
 	_, supported := tasks[task]
 
+	//log.Infof("in selector_task, task type is not supported" )
+
 	return supported, nil
 }
 

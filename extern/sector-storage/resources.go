@@ -73,12 +73,14 @@ var ResourceTable = map[sealtasks.TaskType]map[abi.RegisteredSealProof]Resources
 			BaseMinMemory: 10 << 20,
 		},
 		abi.RegisteredSealProof_StackedDrg32GiBV1: Resources{
-			MaxMemory: 64 << 30,
+			MaxMemory: 61 << 30,
+			//MaxMemory: 60 << 30,
 			MinMemory: 56 << 30,
 
-			Threads: 1,
+			//Threads: 1,
+			Threads: 6,
 
-			BaseMinMemory: 10 << 20,
+			BaseMinMemory: 1 << 20,
 		},
 		abi.RegisteredSealProof_StackedDrg512MiBV1: Resources{
 			MaxMemory: 1 << 30,
@@ -116,13 +118,13 @@ var ResourceTable = map[sealtasks.TaskType]map[abi.RegisteredSealProof]Resources
 			BaseMinMemory: 60 << 30,
 		},
 		abi.RegisteredSealProof_StackedDrg32GiBV1: Resources{
-			MaxMemory: 32 << 30,
-			MinMemory: 32 << 30,
+			MaxMemory: 60 << 30,
+			MinMemory: 60 << 30,
 
 			Threads: -1,
 			CanGPU:  true,
 
-			BaseMinMemory: 30 << 30,
+			BaseMinMemory: 1 << 30,
 		},
 		abi.RegisteredSealProof_StackedDrg512MiBV1: Resources{
 			MaxMemory: 3 << 29, // 1.5G
@@ -202,13 +204,16 @@ var ResourceTable = map[sealtasks.TaskType]map[abi.RegisteredSealProof]Resources
 			BaseMinMemory: 64 << 30, // params
 		},
 		abi.RegisteredSealProof_StackedDrg32GiBV1: Resources{
-			MaxMemory: 150 << 30, // TODO: ~30G of this should really be BaseMaxMemory
-			MinMemory: 30 << 30,
+			//MaxMemory: 150 << 30, // TODO: ~30G of this should really be BaseMaxMemory
+			MaxMemory: 1 << 30, // TODO: ~30G of this should really be BaseMaxMemory
+			//MinMemory: 30 << 30,
+			MinMemory: 1 << 30,
 
 			Threads: -1,
 			CanGPU:  true,
 
-			BaseMinMemory: 32 << 30, // params
+			//BaseMinMemory: 32 << 30, // params
+			BaseMinMemory: 1 << 30, // params
 		},
 		abi.RegisteredSealProof_StackedDrg512MiBV1: Resources{
 			MaxMemory: 3 << 29, // 1.5G

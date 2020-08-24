@@ -10,14 +10,12 @@ import (
 	"net/url"
 	"os"
 	gopath "path"
-	"path/filepath"
 	"sort"
 	"sync"
 
 	"github.com/filecoin-project/lotus/extern/sector-storage/fsutil"
 	"github.com/filecoin-project/lotus/extern/sector-storage/storiface"
 	"github.com/filecoin-project/lotus/extern/sector-storage/tarutil"
-
 	"github.com/filecoin-project/specs-actors/actors/abi"
 
 	"github.com/hashicorp/go-multierror"
@@ -157,6 +155,7 @@ func (r *Remote) AcquireSector(ctx context.Context, s abi.SectorID, spt abi.Regi
 	return paths, stores, nil
 }
 
+/*
 func tempFetchDest(spath string, create bool) (string, error) {
 	st, b := filepath.Split(spath)
 	tempdir := filepath.Join(st, FetchTempSubdir)
@@ -168,6 +167,7 @@ func tempFetchDest(spath string, create bool) (string, error) {
 
 	return filepath.Join(tempdir, b), nil
 }
+*/
 
 func (r *Remote) acquireFromRemote(ctx context.Context, s abi.SectorID, fileType SectorFileType, dest string) (string, error) {
 	si, err := r.index.StorageFindSector(ctx, s, fileType, 0, false)
@@ -188,6 +188,7 @@ func (r *Remote) acquireFromRemote(ctx context.Context, s abi.SectorID, fileType
 		// TODO: see what we have local, prefer that
 
 		for _, url := range info.URLs {
+			/*
 			tempDest, err := tempFetchDest(dest, true)
 			if err != nil {
 				return "", err
@@ -206,6 +207,13 @@ func (r *Remote) acquireFromRemote(ctx context.Context, s abi.SectorID, fileType
 			if err := move(tempDest, dest); err != nil {
 				return "", xerrors.Errorf("fetch move error (storage %s) %s -> %s: %w", info.ID, tempDest, dest, err)
 			}
+			*/
+
+			err = r.fetch(ctx, url, dest)
+			if err != nil {
+				merr = multierror.Append(merr, xerrors.Errorf("fetch error %s (storage %s) -> %s: %w", url, info.ID, dest, err))
+				continue
+			}
 
 			if merr != nil {
 				log.Warnw("acquireFromRemote encountered errors when fetching sector from remote", "errors", merr)
@@ -218,6 +226,9 @@ func (r *Remote) acquireFromRemote(ctx context.Context, s abi.SectorID, fileType
 }
 
 func (r *Remote) fetch(ctx context.Context, url, outname string) error {
+	log.Infof("No Fetch %s -> %s", url, outname)
+	return nil
+
 	log.Infof("Fetch %s -> %s", url, outname)
 
 	if len(r.limit) >= cap(r.limit) {
@@ -319,6 +330,9 @@ func (r *Remote) Remove(ctx context.Context, sid abi.SectorID, typ SectorFileTyp
 }
 
 func (r *Remote) deleteFromRemote(ctx context.Context, url string) error {
+	log.Infof("No Delete %s", url)
+	return nil
+
 	log.Infof("Delete %s", url)
 
 	req, err := http.NewRequest("DELETE", url, nil)

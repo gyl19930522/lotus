@@ -297,6 +297,8 @@ func (i *Index) StorageFindSector(ctx context.Context, s abi.SectorID, ft Sector
 	}
 
 	if allowFetch {
+		/*
+
 		spaceReq, err := ft.SealSpaceUse(spt)
 		if err != nil {
 			return nil, xerrors.Errorf("estimating required space: %w", err)
@@ -322,6 +324,8 @@ func (i *Index) StorageFindSector(ctx context.Context, s abi.SectorID, ft Sector
 				continue
 			}
 
+			*/
+		for id, st := range i.stores {
 			if _, ok := storageIDs[id]; ok {
 				continue
 			}

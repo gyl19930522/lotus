@@ -30,6 +30,7 @@ type StorageMiner interface {
 
 	// Temp api for testing
 	PledgeSector(context.Context) error
+	MutualSector(context.Context, string) error
 
 	// Get the status of a given sector by ID
 	SectorsStatus(ctx context.Context, sid abi.SectorNumber, showOnChainInfo bool) (SectorInfo, error)
@@ -63,6 +64,7 @@ type StorageMiner interface {
 	// WorkerConnect tells the node to connect to workers RPC
 	WorkerConnect(context.Context, string) error
 	WorkerStats(context.Context) (map[uint64]storiface.WorkerStats, error)
+	AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error
 	WorkerJobs(context.Context) (map[uint64][]storiface.WorkerJob, error)
 
 	// SealingSchedDiag dumps internal sealing scheduler state

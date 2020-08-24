@@ -243,7 +243,8 @@ type StorageMinerStruct struct {
 		MarketListDataTransfers   func(ctx context.Context) ([]api.DataTransferChannel, error)                                                                                                                 `perm:"write"`
 		MarketDataTransferUpdates func(ctx context.Context) (<-chan api.DataTransferChannel, error)                                                                                                            `perm:"write"`
 
-		PledgeSector func(context.Context) error `perm:"write"`
+		PledgeSector func(context.Context) error         `perm:"write"`
+		MutualSector func(context.Context, string) error `perm:"write"`
 
 		SectorsStatus                 func(ctx context.Context, sid abi.SectorNumber, showOnChainInfo bool) (api.SectorInfo, error) `perm:"read"`
 		SectorsList                   func(context.Context) ([]abi.SectorNumber, error)                                             `perm:"read"`
@@ -259,6 +260,7 @@ type StorageMinerStruct struct {
 
 		WorkerConnect func(context.Context, string) error                             `perm:"admin"` // TODO: worker perm
 		WorkerStats   func(context.Context) (map[uint64]storiface.WorkerStats, error) `perm:"admin"`
+		AddMutualPath func(context.Context, int, string) error                        `perm:"admin"`
 		WorkerJobs    func(context.Context) (map[uint64][]storiface.WorkerJob, error) `perm:"admin"`
 
 		SealingSchedDiag func(context.Context) (interface{}, error) `perm:"admin"`
@@ -942,6 +944,10 @@ func (c *StorageMinerStruct) PledgeSector(ctx context.Context) error {
 	return c.Internal.PledgeSector(ctx)
 }
 
+func (c *StorageMinerStruct) MutualSector(ctx context.Context, storageRepoPath string) error {
+	return c.Internal.MutualSector(ctx, storageRepoPath)
+}
+
 // Get the status of a given sector by ID
 func (c *StorageMinerStruct) SectorsStatus(ctx context.Context, sid abi.SectorNumber, showOnChainInfo bool) (api.SectorInfo, error) {
 	return c.Internal.SectorsStatus(ctx, sid, showOnChainInfo)
@@ -994,6 +1000,10 @@ func (c *StorageMinerStruct) WorkerConnect(ctx context.Context, url string) erro
 
 func (c *StorageMinerStruct) WorkerStats(ctx context.Context) (map[uint64]storiface.WorkerStats, error) {
 	return c.Internal.WorkerStats(ctx)
+}
+
+func (c *StorageMinerStruct) AddMutualPath(ctx context.Context, groupsId int, mutualPath string) error {
+	return c.Internal.AddMutualPath(ctx, groupsId, mutualPath)
 }
 
 func (c *StorageMinerStruct) WorkerJobs(ctx context.Context) (map[uint64][]storiface.WorkerJob, error) {

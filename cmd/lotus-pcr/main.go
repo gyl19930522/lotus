@@ -393,6 +393,10 @@ func (r *refunder) ProcessTipset(ctx context.Context, tipset *types.TipSet) (*Mi
 			continue
 		}
 
+		/*
+		if percentExtra > 0 {
+			refundValue = types.BigAdd(refundValue, types.BigDiv(types.BigMul(refundValue, types.NewInt(100)), types.NewInt(uint64(percentExtra))))
+		*/
 		if r.percentExtra > 0 {
 			refundValue = types.BigAdd(refundValue, types.BigMul(types.BigDiv(refundValue, types.NewInt(100)), types.NewInt(uint64(r.percentExtra))))
 		}

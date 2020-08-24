@@ -27,6 +27,24 @@ func newExistingSelector(index stores.SectorIndex, sector abi.SectorID, alloc st
 	}
 }
 
+/*
+type existingSelector struct {
+	best []stores.SectorStorageInfo
+}
+
+func newExistingSelector(ctx context.Context, index stores.SectorIndex, sector abi.SectorID, alloc stores.SectorFileType, allowFetch bool) (*existingSelector, error) {
+	//best, err := index.StorageFindSector(ctx, sector, alloc, 0, allowFetch)
+	best, err := index.StorageFindSector(ctx, sector, alloc, 0, allowFetch)
+	if err != nil {
+		return nil, err
+	}
+
+	return &existingSelector{
+		best: best,
+	}, nil
+}
+*/
+
 func (s *existingSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi.RegisteredSealProof, whnd *workerHandle) (bool, error) {
 	tasks, err := whnd.w.TaskTypes(ctx)
 	if err != nil {

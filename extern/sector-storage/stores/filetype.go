@@ -25,7 +25,7 @@ const FSOverheadDen = 10
 var FSOverheadSeal = map[SectorFileType]int{ // 10x overheads
 	FTUnsealed: FSOverheadDen,
 	FTSealed:   FSOverheadDen,
-	FTCache:    141, // 11 layers + D(2x ssize) + C + R
+	FTCache:    10, // 11 layers + D(2x ssize) + C + R
 }
 
 var FsOverheadFinalized = map[SectorFileType]int{

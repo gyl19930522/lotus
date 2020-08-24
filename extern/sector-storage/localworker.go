@@ -9,6 +9,11 @@ import (
 	"github.com/elastic/go-sysinfo"
 	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
+	"github.com/mitchellh/go-homedir"
+	"io/ioutil"
+	"os/exec"
+	"path/filepath"
+
 	"golang.org/x/xerrors"
 
 	ffi "github.com/filecoin-project/filecoin-ffi"
@@ -35,11 +40,17 @@ type LocalWorker struct {
 	sindex     stores.SectorIndex
 
 	acceptTasks map[sealtasks.TaskType]struct{}
+
+	workerGroupsId int
+	mutualPath     string
+
+	mutualSectorPath string
 }
 
-func NewLocalWorker(wcfg WorkerConfig, store stores.Store, local *stores.Local, sindex stores.SectorIndex) *LocalWorker {
+func NewLocalWorker(wcfg WorkerConfig, store stores.Store, local *stores.Local, sindex stores.SectorIndex, workerGroupsId int, mutualPath string, mutualSectorPath string) *LocalWorker {
 	acceptTasks := map[sealtasks.TaskType]struct{}{}
 	for _, taskType := range wcfg.TaskTypes {
+		log.Infof("task type %s for worker %d, group id %d", taskType, wcfg.SealProof, workerGroupsId)
 		acceptTasks[taskType] = struct{}{}
 	}
 
@@ -52,6 +63,11 @@ func NewLocalWorker(wcfg WorkerConfig, store stores.Store, local *stores.Local, 
 		sindex:     sindex,
 
 		acceptTasks: acceptTasks,
+
+		workerGroupsId: workerGroupsId,
+		mutualPath:     mutualPath,
+
+		mutualSectorPath: mutualSectorPath,
 	}
 }
 
@@ -109,6 +125,7 @@ func (l *LocalWorker) AddPiece(ctx context.Context, sector abi.SectorID, epcs []
 	if err != nil {
 		return abi.PieceInfo{}, err
 	}
+	log.Infof("DECENTRAL: localworker add piece")
 
 	return sb.AddPiece(ctx, sector, epcs, sz, r)
 }
@@ -137,6 +154,85 @@ func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, t
 	sb, err := l.sb()
 	if err != nil {
 		return nil, err
+	}
+
+	p := l.mutualPath
+	if p == "NoUse" {
+		path, err := readPathJson()
+		if err != nil {
+			return nil, err
+		}
+		p = path.StorageRepoPath
+	}
+
+	storageRepoPath, err := ioutil.ReadFile(filepath.Join(p, "minerActualRepoPath"))
+	if err != nil {
+		return nil, xerrors.Errorf("read minerActualRepoPath file: %w", err)
+	}
+	mutualSectorIdsFile := filepath.Join(string(storageRepoPath), "mutualSectorIds")
+	flag, err := ffiwrapper.IsMutualSector(int64(sector.Number), mutualSectorIdsFile)
+	if err != nil {
+		return nil, err
+	}
+
+	if flag {
+		localPath, err := homedir.Expand("~/lotus_local_data")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(localPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, xerrors.Errorf("stat ~/lotus_local_data: %w", err)
+			}
+			if err := os.MkdirAll(localPath, 0777); err != nil {
+				return nil, xerrors.Errorf("mkdir~/lotus_local_data: %w", err)
+			}
+		}
+
+		localStagedPath := localPath + "/mutual-sector"
+		stagedPath := l.mutualSectorPath
+		if _, err := os.Stat(localStagedPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, xerrors.Errorf("stat mutual sector: %w", err)
+			}
+			cmd := exec.Command("cp", "-rf", stagedPath, localStagedPath)
+			log.Infof("copping fake staged sector: cp -rf %s %s", stagedPath, localStagedPath)
+			if err := cmd.Run(); err != nil {
+				return nil, xerrors.Errorf("copy fake staged sector (%s to %s): %w", stagedPath, localStagedPath, err)
+			}
+		}
+
+		unsealedPath := filepath.Join(p, stores.FTUnsealed.String(), stores.SectorName(sector))
+		_, err = os.Stat(unsealedPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, xerrors.Errorf("os.Stat unsealed sector %s: %w", unsealedPath, err)
+		}
+		if err == nil {
+			if err := os.Remove(unsealedPath); err != nil {
+				return nil, xerrors.Errorf("os.Remove existing unsealed sector %s: %w", unsealedPath, err)
+			}
+		}
+		if err := os.Symlink(localStagedPath, unsealedPath); err != nil {
+			return nil, xerrors.Errorf("os.Symlink %s to %s: %w", unsealedPath, localStagedPath, err)
+		}
+	} else {
+		stagedPath := filepath.Join(string(storageRepoPath), stores.FTUnsealed.String(), stores.SectorName(sector))
+		if _, err := os.Stat(stagedPath); err != nil {
+			return nil, xerrors.Errorf("miner do not have unsealed file %s: %w", stagedPath, err)
+		}
+
+		unsealedPath := filepath.Join(p, stores.FTUnsealed.String(), stores.SectorName(sector))
+		_, err = os.Stat(unsealedPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, xerrors.Errorf("os.Stat unsealed sector %s: %w", unsealedPath, err)
+		}
+		if os.IsNotExist(err) {
+			cmd := exec.Command("cp", "-rf", stagedPath, unsealedPath)
+			log.Infof("copping real staged sector: cp -rf %s %s", stagedPath, unsealedPath)
+			if err := cmd.Run(); err != nil {
+				return nil, xerrors.Errorf("copy real staged sector (%s to %s): %w", stagedPath, unsealedPath, err)
+			}
+		}
 	}
 
 	return sb.SealPreCommit1(ctx, sector, ticket, pieces)
@@ -175,9 +271,13 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID, k
 		return err
 	}
 
+	log.Infof("DECENTRAL: in localworker.go, finalizing sector...")
+
 	if err := sb.FinalizeSector(ctx, sector, keepUnsealed); err != nil {
 		return xerrors.Errorf("finalizing sector: %w", err)
 	}
+
+	log.Infof("DECENTRAL: in localworker.go, leaving finalize sector...")
 
 	if len(keepUnsealed) == 0 {
 		if err := l.storage.Remove(ctx, sector, stores.FTUnsealed, true); err != nil {
@@ -284,6 +384,8 @@ func (l *LocalWorker) Info(context.Context) (storiface.WorkerInfo, error) {
 			CPUs:        uint64(runtime.NumCPU()),
 			GPUs:        gpus,
 		},
+		WorkerGroupsId: l.workerGroupsId,
+		MutualPath:     l.mutualPath,
 	}, nil
 }
 

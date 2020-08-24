@@ -11,6 +11,9 @@ type WorkerInfo struct {
 	Hostname string
 
 	Resources WorkerResources
+
+	WorkerGroupsId int
+	MutualPath     string
 }
 
 type WorkerResources struct {
