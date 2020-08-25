@@ -413,18 +413,6 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 			return xerrors.Errorf("get worker info: %w", err)
 		}
 		// m.sched.sectorGroupIds[sector] = info.WorkerGroupsId
-
-		p, err := w.SealPreCommit1(ctx, sector, ticket, pieces)
-		if err != nil {
-			return err
-		}
-
-		if err := handleStoragePath(ctx, sector, w, stores.FTSealed); err != nil {
-			return xerrors.Errorf("handleStoragePath %w", err)
-		}
-		if err := handleStoragePath(ctx, sector, w, stores.FTCache); err != nil {
-			return xerrors.Errorf("handleStoragePath %w", err)
-		}
 		if info.MutualPath != "NoUse" {
 			sectorGroupId := []byte(strconv.Itoa(info.WorkerGroupsId))
 			idFile := filepath.Join(info.MutualPath, stores.FTCache.String(), stores.SectorName(sector), "sectorGroupId")
@@ -445,6 +433,17 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 			log.Warn("Miner is computing. Sector %d is assigned to Group %d", sector.Number, info.WorkerGroupsId)
 		}
 
+		p, err := w.SealPreCommit1(ctx, sector, ticket, pieces)
+		if err != nil {
+			return err
+		}
+
+		if err := handleStoragePath(ctx, sector, w, stores.FTSealed); err != nil {
+			return xerrors.Errorf("handleStoragePath %w", err)
+		}
+		if err := handleStoragePath(ctx, sector, w, stores.FTCache); err != nil {
+			return xerrors.Errorf("handleStoragePath %w", err)
+		}
 		out = p
 		return nil
 	})
