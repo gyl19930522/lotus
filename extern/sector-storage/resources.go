@@ -120,8 +120,8 @@ var ResourceTable = map[sealtasks.TaskType]map[abi.RegisteredSealProof]Resources
 			BaseMinMemory: 60 << 30,
 		},
 		abi.RegisteredSealProof_StackedDrg32GiBV1: Resources{
-			MaxMemory: 60 << 30,
-			MinMemory: 60 << 30,
+			MaxMemory: 50 << 30,
+			MinMemory: 50 << 30,
 
 			Threads: -1,
 			CanGPU:  true,

@@ -268,10 +268,12 @@ func (sh *scheduler) diag() SchedDiagInfo {
 
 		id, err := sh.findSectorGroupId(task.sector)
 
+
 		if err != nil {
 			//log.Errorf("sector %d did not have group: %+v", task.sector.Number, err)
-			continue
+			// continue
 			//return
+			id = -1
 		}
 
 		out.Requests = append(out.Requests, SchedDiagRequestInfo{
@@ -343,11 +345,9 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 		// worker mutex
 		nosched := false
-		worker.lk.Lock()
 		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
 			nosched = true
 		}
-		worker.lk.Unlock()
 		if nosched {
 			continue
 		}
@@ -445,7 +445,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 
 	if !ok {
 		// TODO: How to move forward here?
-		sh.openWindows = append(sh.openWindows, windowRequest)
+		// sh.openWindows = append(sh.openWindows, windowRequest)
 		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window, due to worker missing", windowRequest.worker)
 		return
 	}

@@ -124,11 +124,17 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 
 	go m.sched.runSched()
 
-	localTasks := []sealtasks.TaskType{
+	// localTasks := []sealtasks.TaskType{
+	// 	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+	// }
+	localTasks_finalize := []sealtasks.TaskType{
 		sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
 	}
+	localTasks_addpiece := []sealtasks.TaskType{
+		sealtasks.TTCommit1, sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+	}
 	if sc.AllowAddPiece {
-		localTasks = append(localTasks, sealtasks.TTAddPiece)
+		//localTasks = append(localTasks, sealtasks.TTAddPiece)
 	}
 
 	/*
@@ -143,16 +149,20 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 		}
 	*/
 	if sc.AllowUnseal {
-		localTasks = append(localTasks, sealtasks.TTUnseal)
-		// localTasks_finalize = append(localTasks_finalize, sealtasks.TTUnseal)
-		// localTasks_addpiece = append(localTasks_addpiece, sealtasks.TTUnseal)
+		// localTasks = append(localTasks, sealtasks.TTUnseal)
+		localTasks_finalize = append(localTasks_finalize, sealtasks.TTUnseal)
+		localTasks_addpiece = append(localTasks_addpiece, sealtasks.TTUnseal)
 		// localTasks_fetch = append(localTasks_fetch, sealtasks.TTUnseal)
 	}
 	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks,
+		TaskTypes: localTasks_addpiece,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 
+	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
+		SealProof: cfg.SealProofType,
+		TaskTypes: localTasks_finalize,
+	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 	// 	SealProof: cfg.SealProofType,
 	// 	TaskTypes: localTasks_finalize,
