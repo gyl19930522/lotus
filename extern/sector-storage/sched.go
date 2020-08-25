@@ -298,13 +298,13 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 		sh.workersLk.RLock()
 		worker, ok := sh.workers[windowRequest.worker]
-		wr := worker.info.Resources
 		sh.workersLk.RUnlock()
 		if !ok {
 			log.Errorf("worker referenced by windowRequest not found (worker: %d)", windowRequest.worker)
 			// TODO: How to move forward here?
 			continue
 		}
+		wr := worker.info.Resources
 
 		if task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1 {
 			id, err := sh.findSectorGroupId(task.sector)
@@ -364,9 +364,12 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 	for _, wnd := range acceptableWindows {
 		sh.workersLk.RLock()
 		wid := sh.openWindows[wnd].worker
-		worker := sh.workers[wid]
-		wr := worker.info.Resources
+		worker, ok := sh.workers[wid]
 		sh.workersLk.RUnlock()
+		if !ok {
+			continue
+		}
+		wr := worker.info.Resources
 
 		//log.Debugf("SCHED try assign sqi:%d sector %d to window %d", sqi, task.sector.Number, wnd)
 		//log.Debugf("SCHED try assign sector %d to window %d", task.sector.Number, wnd)
@@ -435,7 +438,6 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	//windows := schedWindow{}
 	sh.workersLk.RLock()
 	worker, ok := sh.workers[windowRequest.worker]
-	wr := worker.info.Resources
 	sh.workersLk.RUnlock()
 
 	if !ok {
@@ -444,6 +446,7 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 		log.Infof("DECENTRAL trySchedOneWindow: no task is assigned on new worker {%d} window, due to worker missing", windowRequest.worker)
 		return
 	}
+	wr := worker.info.Resources
 
 	log.Infof("DECENTRAL trySchedOneWindow: worker %d has active resource: %s", windowRequest.worker, (*worker.active))
 
