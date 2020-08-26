@@ -125,11 +125,14 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	go m.sched.runSched()
 
 	localTasks := []sealtasks.TaskType{
-		sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+		sealtasks.TTCommit1, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
 	}
-	// localTasks_finalize := []sealtasks.TaskType{
-	// 	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
-	// }
+	//localTasks := []sealtasks.TaskType{
+	//	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+	//}
+	localTasks_finalize := []sealtasks.TaskType{
+		sealtasks.TTFinalize, sealtasks.TTFetch,
+	}
 	// localTasks_addpiece := []sealtasks.TaskType{
 	// 	sealtasks.TTCommit1, sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
 	// }
@@ -157,6 +160,11 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 		SealProof: cfg.SealProofType,
 		TaskTypes: localTasks,
+	}, stor, lstor, si, -1, "NoUse", "NoUse"))
+
+	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
+		SealProof: cfg.SealProofType,
+		TaskTypes: localTasks_finalize,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 
 	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{

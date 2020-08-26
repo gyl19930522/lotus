@@ -608,6 +608,20 @@ func (sh *scheduler) trySchedOneWindow(windowRequest *schedWindowRequest) {
 	case windowRequest.done <- &window:
 	default:
 		log.Error("expected sh.openWindows[wnd].done to be buffered")
+		exist := false
+		for i := 0; i < len(sh.openWindows); i++ {
+			if sh.openWindows[i].worker == windowRequest.worker {
+				exist = true
+				break
+			}
+		}
+		if !exist {
+			sh.openWindows = append(sh.openWindows, windowRequest)
+			log.Infof("DECENTRAL trySchedOneWindow: append this window to list, {%d}", windowRequest.worker)
+		} else {
+			log.Infof("DECENTRAL trySchedOneWindow: didn't add window {%d}", windowRequest.worker)
+		}
+		return
 	}
 }
 
@@ -910,10 +924,12 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 				activeWindows = append(activeWindows, w)
 			case <-taskDone:
 				log.Debugw("task done", "workerid", wid)
+				/*
 				sh.windowRequests <- &schedWindowRequest{
 					worker: wid,
 					done:   scheduledWindows,
 				}
+				*/
 			case <-sh.closing:
 				return
 			case <-workerClosing:
@@ -1003,14 +1019,15 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 			sh.workersLk.Unlock()
 			defer sh.workersLk.Lock() // we MUST return locked from this function
 
-			//log.Infof("DECENTRAL: in assign worker, now working on task %d", req.sector)
-			err = req.work(req.ctx, w.wt.worker(w.w))
-			log.Infof("DECENTRAL: assign worker done on task %d", req.sector)
-
 			select {
 			case taskDone <- struct{}{}:
 			case <-sh.closing:
 			}
+
+			log.Infof("DECENTRAL: in assign worker, now working on task %d, %s", req.sector, req.taskType)
+			err = req.work(req.ctx, w.wt.worker(w.w))
+			log.Infof("DECENTRAL: assign worker done on task %d, %s", req.sector, req.taskType)
+
 			select {
 			//case req.ret <- workerResponse{err: err}: taskDone <- struct{}{}
 			case req.ret <- workerResponse{err: err}:
