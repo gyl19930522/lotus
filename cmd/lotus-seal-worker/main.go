@@ -247,21 +247,21 @@ var runCmd = &cli.Command{
 
 		var taskTypes []sealtasks.TaskType
 
-		taskTypes = append(taskTypes, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
+		//taskTypes = append(taskTypes, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
 		//taskTypes = append(taskTypes, sealtasks.TTFetch)
 
 		if cctx.Bool("addpiece") {
-			taskTypes = append(taskTypes, sealtasks.TTAddPiece)
+			taskTypes = append(taskTypes, sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
 		}
 		if cctx.Bool("precommit1") {
 			//taskTypes = append(taskTypes, sealtasks.TTPreCommit1, sealtasks.TTCommit1)
-			taskTypes = append(taskTypes, sealtasks.TTPreCommit1)
+			taskTypes = append(taskTypes, sealtasks.TTPreCommit1, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
 		}
 		if cctx.Bool("unseal") {
-			taskTypes = append(taskTypes, sealtasks.TTUnseal)
+			taskTypes = append(taskTypes, sealtasks.TTUnseal, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
 		}
 		if cctx.Bool("precommit2") {
-			taskTypes = append(taskTypes, sealtasks.TTPreCommit2)
+			taskTypes = append(taskTypes, sealtasks.TTPreCommit2, sealtasks.TTFetch, sealtasks.TTCommit1, sealtasks.TTFinalize)
 			// taskTypes = append(taskTypes, sealtasks.TTPreCommit2, sealtasks.TTCommit1)
 		}
 		if cctx.Bool("commit") {
