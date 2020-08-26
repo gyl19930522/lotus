@@ -384,7 +384,7 @@ func (sh *scheduler) trySchedOneTask(task *workerRequest) {
 
 		// worker mutex
 		nosched := false
-		if !worker.active.canHandleRequest(needRes, windowRequest.worker, wr) {
+		if !worker.active.canHandleRequest(needRes, wid, wr) {
 			nosched = true
 		}
 		if nosched {
