@@ -159,10 +159,6 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 		TaskTypes: localTasks,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 
-	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks,
-	}, stor, lstor, si, -1, "NoUse", "NoUse"))
 	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 	// 	SealProof: cfg.SealProofType,
 	// 	TaskTypes: localTasks_finalize,
@@ -549,7 +545,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 
 	unsealed := stores.FTUnsealed
 	{
-		log.Infof("DECENTRAL: manager finalize sector - storage find sector")
+		log.Infof("DECENTRAL: manager finalize sector - storage find sector, sector %d", sector)
 		unsealedStores, err := m.index.StorageFindSector(ctx, sector, stores.FTUnsealed, 0, false)
 		if err != nil {
 			return xerrors.Errorf("finding unsealed sector: %w", err)
@@ -578,7 +574,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		return err
 	}
 
-	log.Infof("DECENTRAL: manager finalize sector - finalize scheduled ")
+	log.Infof("DECENTRAL: manager finalize sector - finalize scheduled for sector %d", sector)
 	/*
 		log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
 		fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
@@ -591,7 +587,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		}
 	}
 
-	log.Infof("DECENTRAL: manager finalize sector - new schedule fetch")
+	log.Infof("DECENTRAL: manager finalize sector - new schedule fetch for sector %d", sector)
 	err = m.sched.Schedule(ctx, sector, sealtasks.TTFetch, fetchSel,
 		schedFetch(sector, stores.FTCache|stores.FTSealed|moveUnsealed, stores.PathStorage, stores.AcquireMove),
 		func(ctx context.Context, w Worker) error {
@@ -600,7 +596,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
 	}
-	log.Infof("DECENTRAL: manager finalize sector - fetch scheduled ")
+	log.Infof("DECENTRAL: manager finalize sector - fetch scheduled for sector %d", sector)
 
 	return nil
 }
