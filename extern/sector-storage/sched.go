@@ -883,6 +883,7 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 
 		scheduledWindows := make(chan *schedWindow, SchedWindows)
 		taskDone := make(chan struct{}, 1)
+		refresh := make(chan struct{}, 1)
 		windowsRequested := 0
 
 		var activeWindows []*schedWindow
@@ -930,6 +931,11 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 					done:   scheduledWindows,
 				}
 				*/
+			case <-refresh:
+				sh.windowRequests <- &schedWindowRequest{
+					worker: wid,
+					done:   scheduledWindows,
+				}
 			case <-sh.closing:
 				return
 			case <-workerClosing:
@@ -958,7 +964,7 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 					}
 
 					log.Debugf("assign worker sector %d", todo.sector.Number)
-					err := sh.assignWorker(taskDone, wid, worker, todo)
+					err := sh.assignWorker(refresh, taskDone, wid, worker, todo)
 					sh.workersLk.RUnlock()
 
 					if err != nil {
@@ -979,7 +985,7 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 	}()
 }
 
-func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *workerHandle, req *workerRequest) error {
+func (sh *scheduler) assignWorker(refresh chan struct{}, taskDone chan struct{}, wid WorkerID, w *workerHandle, req *workerRequest) error {
 	needRes := ResourceTable[req.taskType][sh.spt]
 
 	w.lk.Lock()
@@ -1028,6 +1034,15 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 			err = req.work(req.ctx, w.wt.worker(w.w))
 			log.Infof("DECENTRAL: assign worker done on task %d, %s", req.sector, req.taskType)
 
+			// to trigger the scheduler again
+			if err == nil {
+				refresh <- struct{}{}
+			}
+			//select {
+			//case taskDone <- struct{}{}:
+			//case <-sh.closing:
+			//}
+
 			select {
 			//case req.ret <- workerResponse{err: err}: taskDone <- struct{}{}
 			case req.ret <- workerResponse{err: err}:
@@ -1036,6 +1051,8 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 			case <-sh.closing:
 				log.Warnf("scheduler closed while sending response")
 			}
+
+			log.Infof("DECENTRAL: returning from assign worker, task %d, %s", req.sector, req.taskType)
 
 			return nil
 		})
