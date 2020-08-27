@@ -174,7 +174,7 @@ var runCmd = &cli.Command{
 			}
 		}
 
-		if cctx.String("address") == "" {
+		if cctx.String("listen") == "" {
 			return xerrors.Errorf("--address flag is required")
 		}
 		/*
