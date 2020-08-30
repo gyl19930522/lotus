@@ -183,7 +183,7 @@ var sealingJobsCmd = &cli.Command{
 				state = fmt.Sprintf("assigned(%d)", l.RunWait-1)
 			}
 
-			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%s\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerGroupId[l.wid], workerHostnames[l.wid], l.Task.Short(), state, time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
+			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerGroupId[l.wid], workerHostnames[l.wid], l.Task.Short(), state, time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
 		}
 
 		return tw.Flush()
