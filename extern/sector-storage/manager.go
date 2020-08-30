@@ -587,6 +587,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
 		fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	*/
+	/*
 	fetchSel := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	moveUnsealed := unsealed
 	{
@@ -594,8 +595,11 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 			moveUnsealed = stores.FTNone
 		}
 	}
+	*/
 
 	log.Infof("DECENTRAL: manager finalize sector - new schedule fetch for sector %d", sector)
+	log.Infof("DECENTRAL: in manager finalize, disabling MoveStorage")
+	/*
 	err = m.sched.Schedule(ctx, sector, sealtasks.TTFetch, fetchSel,
 		schedFetch(sector, stores.FTCache|stores.FTSealed|moveUnsealed, stores.PathStorage, stores.AcquireMove),
 		func(ctx context.Context, w Worker) error {
@@ -604,6 +608,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
 	}
+	*/
 	log.Infof("DECENTRAL: manager finalize sector - fetch scheduled for sector %d", sector)
 
 	return nil
