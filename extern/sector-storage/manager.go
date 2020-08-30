@@ -658,7 +658,7 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 		func(ctx context.Context, w Worker) error {
 			return w.Remove(ctx, sector)
 		})
-	return err
+	//return err
 }
 
 func (m *Manager) StorageLocal(ctx context.Context) (map[stores.ID]string, error) {
