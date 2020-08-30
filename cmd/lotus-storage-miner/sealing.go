@@ -175,20 +175,15 @@ var sealingJobsCmd = &cli.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-		/*
-		_, _ = fmt.Fprintf(tw, "ID\tSector\tWorker\tGroup\tHostname\tTask\tTime\n")
-
-		for _, l := range lines {
-			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%d\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerGroupId[l.wid], workerHostnames[l.wid], l.Task.Short(), time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
-			*/
-		_, _ = fmt.Fprintf(tw, "ID\tSector\tWorker\tHostname\tTask\tState\tTime\n")
+		_, _ = fmt.Fprintf(tw, "ID\tSector\tWorker\tGroup\tHostname\tTask\tState\tTime\n")
 
 		for _, l := range lines {
 			state := "running"
 			if l.RunWait != 0 {
 				state = fmt.Sprintf("assigned(%d)", l.RunWait-1)
 			}
-			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%s\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerHostnames[l.wid], l.Task.Short(), state, time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
+
+			_, _ = fmt.Fprintf(tw, "%d\t%d\t%d\t%s\t%s\t%s\t%s\n", l.ID, l.Sector.Number, l.wid, workerGroupId[l.wid], workerHostnames[l.wid], l.Task.Short(), state, time.Now().Sub(l.Start).Truncate(time.Millisecond*100))
 		}
 
 		return tw.Flush()
