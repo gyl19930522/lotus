@@ -270,13 +270,14 @@ func Builder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test.TestN
 		var wait sync.Mutex
 		wait.Lock()
 
-		_ = storers[0].MineOne(ctx, miner2.MineReq{Done: func(bool, error) {
+		test.MineUntilBlock(ctx, t, fulls[0], storers[0], func(epoch abi.ChainEpoch) {
 			wait.Unlock()
-		}})
+		})
+
 		wait.Lock()
-		_ = storers[0].MineOne(ctx, miner2.MineReq{Done: func(bool, error) {
+		test.MineUntilBlock(ctx, t, fulls[0], storers[0], func(epoch abi.ChainEpoch) {
 			wait.Unlock()
-		}})
+		})
 		wait.Lock()
 	}
 
@@ -419,13 +420,13 @@ func MockSbBuilder(t *testing.T, nFull int, storage []test.StorageMiner) ([]test
 		var wait sync.Mutex
 		wait.Lock()
 
-		_ = storers[0].MineOne(ctx, miner2.MineReq{Done: func(bool, error) {
+		test.MineUntilBlock(ctx, t, fulls[0], storers[0], func(abi.ChainEpoch) {
 			wait.Unlock()
-		}})
+		})
 		wait.Lock()
-		_ = storers[0].MineOne(ctx, miner2.MineReq{Done: func(bool, error) {
+		test.MineUntilBlock(ctx, t, fulls[0], storers[0], func(abi.ChainEpoch) {
 			wait.Unlock()
-		}})
+		})
 		wait.Lock()
 	}
 
