@@ -31,8 +31,15 @@ func (m *Manager) WorkerJobs() map[uint64][]storiface.WorkerJob {
 
 	for id, handle := range m.sched.workers {
 		out[uint64(id)] = handle.wt.Running()
+	}
 
-		handle.wndLk.Lock()
+
+	/*
+
+	for id, handle := range m.sched.workers {
+		out[uint64(id)] = handle.wt.Running()
+
+		//handle.wndLk.Lock()
 		for wi, window := range handle.activeWindows {
 			for _, request := range window.todo {
 				out[uint64(id)] = append(out[uint64(id)], storiface.WorkerJob{
@@ -44,8 +51,9 @@ func (m *Manager) WorkerJobs() map[uint64][]storiface.WorkerJob {
 				})
 			}
 		}
-		handle.wndLk.Unlock()
+		//handle.wndLk.Unlock()
 	}
+	*/
 
 	return out
 }
