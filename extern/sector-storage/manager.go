@@ -628,7 +628,6 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 		return xerrors.Errorf("acquiring sector lock: %w", err)
 	}
 
-	/*
 	unsealed := stores.FTUnsealed
 	{
 		log.Infof("DECENTRAL: manager remove - storageFindSector")
@@ -636,7 +635,8 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 		if err != nil {
 			return xerrors.Errorf("finding unsealed sector: %w", err)
 		}
-	*/
+	}
+	/*
 	var err error
 
 	if rerr := m.storage.Remove(ctx, sector, stores.FTSealed, true); rerr != nil {
@@ -648,8 +648,8 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 	if rerr := m.storage.Remove(ctx, sector, stores.FTUnsealed, true); rerr != nil {
 		err = multierror.Append(err, xerrors.Errorf("removing sector (unsealed): %w", rerr))
 	}
+	*/
 
-	/*
 	selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
 
 	log.Infof("DECENTRAL: manager remove - schedule finalize")
@@ -658,7 +658,6 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 		func(ctx context.Context, w Worker) error {
 			return w.Remove(ctx, sector)
 		})
-	*/
 	return err
 }
 
