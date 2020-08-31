@@ -324,6 +324,8 @@ func (st *Local) Reserve(ctx context.Context, sid abi.SectorID, spt abi.Register
 }
 
 func (st *Local) AcquireSector(ctx context.Context, sid abi.SectorID, spt abi.RegisteredSealProof, existing SectorFileType, allocate SectorFileType, pathType PathType, op AcquireMode) (SectorPaths, SectorPaths, error) {
+	log.Infof("DECENTRAL: entering acquire sector - sector id %d, ", sid)
+
 	if existing|allocate != existing^allocate {
 		return SectorPaths{}, SectorPaths{}, xerrors.New("can't both find and allocate a sector")
 	}
@@ -410,6 +412,8 @@ func (st *Local) AcquireSector(ctx context.Context, sid abi.SectorID, spt abi.Re
 		SetPathByType(&storageIDs, fileType, string(bestID))
 		allocate ^= fileType
 	}
+
+	log.Infof("DECENTRAL: leaving acquire sector - sector id %d, ", sid)
 
 	return out, storageIDs, nil
 }
