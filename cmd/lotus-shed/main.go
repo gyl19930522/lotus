@@ -31,6 +31,7 @@ func main() {
 		miscCmd,
 		mpoolCmd,
 		genesisVerifyCmd,
+		mpoolStatsCmd,
 	}
 
 	app := &cli.App{
