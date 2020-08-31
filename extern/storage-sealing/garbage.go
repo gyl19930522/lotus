@@ -224,12 +224,10 @@ func (m *Sealing) readPiecesJson(ctx context.Context, sectorID abi.SectorID, siz
 		}
 	}
 
-	/*
 	_, err = m.pledgeSector(ctx, sectorID, []abi.UnpaddedPieceSize{}, size)
 	if err != nil {
 		return nil, xerrors.Errorf("modified add piece error  : %w", err)
 	}
-	*/
 
 	if path.MinerId != m.maddr.String() {
 		return nil, xerrors.Errorf("pathConfig.json has wrong miner Id")
