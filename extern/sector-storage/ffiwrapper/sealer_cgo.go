@@ -90,12 +90,11 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 
 	log.Infof("DECENTRAL ffiwrapper add piece - readPathJson")
 	path, err := readPathJson()
-	if err != nil && !os.IsNotExist(err) {
+	//if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		log.Errorf("%+v", err)
 		return abi.PieceInfo{}, xerrors.Errorf("read path config file: %w", err)
-	}
-
-	if !os.IsNotExist(err) {
+	} else {
 		mutualSectorIdsFile := filepath.Join(path.StorageRepoPath, "mutualSectorIds")
 
 		log.Infof("DECENTRAL ffiwrapper add piece - isMutualSector")

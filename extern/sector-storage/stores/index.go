@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 	gopath "path"
-	"sort"
+	//"sort"
 	"sync"
 	"time"
 
@@ -13,7 +13,7 @@ import (
 	"github.com/filecoin-project/lotus/extern/sector-storage/fsutil"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
-	"github.com/filecoin-project/specs-actors/actors/abi/big"
+	//"github.com/filecoin-project/specs-actors/actors/abi/big"
 )
 
 var HeartbeatInterval = 10 * time.Second
@@ -406,12 +406,14 @@ func (i *Index) StorageBestAlloc(ctx context.Context, allocate SectorFileType, s
 		return nil, xerrors.New("no good path found")
 	}
 
+	/*
 	sort.Slice(candidates, func(i, j int) bool {
 		iw := big.Mul(big.NewInt(candidates[i].fsi.Available), big.NewInt(int64(candidates[i].info.Weight)))
 		jw := big.Mul(big.NewInt(candidates[j].fsi.Available), big.NewInt(int64(candidates[j].info.Weight)))
 
 		return iw.GreaterThan(jw)
 	})
+	*/
 
 	out := make([]StorageInfo, len(candidates))
 	for i, candidate := range candidates {
