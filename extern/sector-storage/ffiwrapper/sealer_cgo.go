@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"math/bits"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -55,7 +54,7 @@ func (sb *Sealer) NewSector(ctx context.Context, sector abi.SectorID) error {
 	// TODO: Allocate the sector here instead of in addpiece
 	var err error
 	var done func()
-	var stagedFile *partialFile
+	var stagedPath stores.SectorPaths
 
 	defer func() {
 		if done != nil {
@@ -69,7 +68,7 @@ func (sb *Sealer) NewSector(ctx context.Context, sector abi.SectorID) error {
 		}
 	}()
 
-	stagedFile, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
+	stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
 	if err != nil {
 		return xerrors.Errorf("acquire unsealed sector: %w", err)
 	} else {
