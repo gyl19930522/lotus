@@ -307,7 +307,7 @@ func (sh *scheduler) maybeSchedRequest(req *workerRequest) (bool, error) {
 		if req.taskType == sealtasks.TTPreCommit1 || req.taskType == sealtasks.TTPreCommit2 || req.taskType == sealtasks.TTCommit1 {
 			if id, err := sh.findSectorGroupId(req.sector); err != nil {
 				log.Errorf("sector %d did not have group: %+v", req.sector.Number, err)
-				return
+				return false, err
 			} else if id != worker.info.WorkerGroupsId {
 				continue
 			}
