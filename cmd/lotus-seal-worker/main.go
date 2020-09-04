@@ -178,7 +178,7 @@ var runCmd = &cli.Command{
 		}
 
 		if cctx.String("listen") == "" {
-			return xerrors.Errorf("--address flag is required")
+			return xerrors.Errorf("--listen flag is required")
 		}
 		/*
 		if cctx.String("mutualpath") == "" {

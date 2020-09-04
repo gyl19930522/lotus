@@ -109,7 +109,7 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	stor := stores.NewRemote(lstor, si, http.Header(sa), sc.ParallelFetchLimit)
 
 	m := &Manager{
-		scfg: cfg,
+		scfg: 		cfg,
 
 		ls:         ls,
 		storage:    stor,
@@ -117,71 +117,26 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 		remoteHnd:  &stores.FetchHandler{Local: lstor},
 		index:      si,
 
-		sched: newScheduler(cfg.SealProofType),
+		sched: 		newScheduler(cfg.SealProofType),
 
-		Prover: prover,
+		Prover: 	prover,
 	}
 
 	go m.sched.runSched()
 
 	localTasks := []sealtasks.TaskType{
-		sealtasks.TTCommit1, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
+		sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
 	}
-	//localTasks := []sealtasks.TaskType{
-	//	sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
-	//}
-	localTasks_finalize := []sealtasks.TaskType{
-		sealtasks.TTFinalize, sealtasks.TTFetch,
-	}
-	// localTasks_addpiece := []sealtasks.TaskType{
-	// 	sealtasks.TTCommit1, sealtasks.TTAddPiece, sealtasks.TTFetch, sealtasks.TTReadUnsealed,
-	// }
 	if sc.AllowAddPiece {
 		localTasks = append(localTasks, sealtasks.TTAddPiece)
 	}
-
-	/*
-		if sc.AllowPreCommit1 {
-			localTasks = append(localTasks, sealtasks.TTPreCommit1)
-		}
-		if sc.AllowPreCommit2 {
-			localTasks = append(localTasks, sealtasks.TTPreCommit2)
-		}
-		if sc.AllowCommit {
-			localTasks = append(localTasks, sealtasks.TTCommit2)
-		}
-	*/
 	if sc.AllowUnseal {
 		localTasks = append(localTasks, sealtasks.TTUnseal)
-		//localTasks_finalize = append(localTasks_finalize, sealtasks.TTUnseal)
-		//localTasks_addpiece = append(localTasks_addpiece, sealtasks.TTUnseal)
-		// localTasks_fetch = append(localTasks_fetch, sealtasks.TTUnseal)
 	}
 	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
 		SealProof: cfg.SealProofType,
 		TaskTypes: localTasks,
 	}, stor, lstor, si, -1, "NoUse", "NoUse"))
-
-	err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-		SealProof: cfg.SealProofType,
-		TaskTypes: localTasks_finalize,
-	}, stor, lstor, si, -1, "NoUse", "NoUse"))
-
-	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-	// 	SealProof: cfg.SealProofType,
-	// 	TaskTypes: localTasks_finalize,
-	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
-
-	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-	// 	SealProof: cfg.SealProofType,
-	// 	TaskTypes: localTasks_addpiece,
-	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
-
-	// err = m.AddWorker(ctx, NewLocalWorker(WorkerConfig{
-	// 	SealProof: cfg.SealProofType,
-	// 	TaskTypes: localTasks_fetch,
-	// }, stor, lstor, si, -1, "NoUse", "NoUse"))
-
 	if err != nil {
 		return nil, xerrors.Errorf("adding local worker: %w", err)
 	}
@@ -213,39 +168,9 @@ func (m *Manager) AddWorker(ctx context.Context, w Worker) error {
 		return xerrors.Errorf("getting worker info: %w", err)
 	}
 
-	// update task selector in sched queue
-	// since the newExistingSelector now seeks worker everytime, the following code is not necessary
-
-	/*
-		my_tasktypes, err := w.TaskTypes(ctx)
-
-		if err == nil {
-
-			for sqi := 0; sqi < m.sched.schedQueue.Len(); sqi ++ {
-				task := (*m.sched.schedQueue)[sqi]
-				_, supported := my_tasktypes[task.taskType]
-
-				if (task.taskType == sealtasks.TTPreCommit2 || task.taskType == sealtasks.TTCommit1) && (supported) {
-					//log.Debug("DECENTRAL: AddWorker - new selector for task %d", task.sector.Number)
-					//selector := newExistingSelector(m.index, task.sector, stores.FTCache|stores.FTSealed, true)
-					selector, err := newExistingSelector(ctx, m.index, task.sector, stores.FTCache|stores.FTSealed, true)
-					if err != nil {
-						log.Debug("DECENTRAL: Cannot update task %d selector", task.sector.Number)
-					}
-					task.sel = selector
-					//log.Debugf("DECENTRAL: AddWorker - task selector is %v", task.sel)
-				}
-			}
-			log.Debugf("DECENTRAL: task updated and worker added")
-		}
-
-	*/
-
 	m.sched.newWorkers <- &workerHandle{
-		w: w,
-		wt: &workTracker{
-			running: map[uint64]storiface.WorkerJob{},
-		},
+		w: 		   w,
+		wt: 	   &workTracker{ running: map[uint64]storiface.WorkerJob{} },
 		info:      info,
 		preparing: &activeResources{},
 		active:    &activeResources{},
@@ -300,7 +225,7 @@ func (m *Manager) ReadPiece(ctx context.Context, sink io.Writer, sector abi.Sect
 
 	var selector WorkerSelector
 	if len(best) == 0 { // new
-		selector = newAllocSelector(ctx, m.index, stores.FTUnsealed, stores.PathSealing)
+		selector = newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
 	} else { // append to existing
 		selector = newExistingSelector(m.index, sector, stores.FTUnsealed, false)
 	}
@@ -363,8 +288,20 @@ func (m *Manager) ReadPiece(ctx context.Context, sink io.Writer, sector abi.Sect
 }
 
 func (m *Manager) NewSector(ctx context.Context, sector abi.SectorID) error {
-	log.Warnf("stub NewSector")
-	return nil
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	if err := m.index.StorageLock(ctx, sector, stores.FTNone, stores.FTUnsealed); err != nil {
+		return xerrors.Errorf("acquiring sector lock: %w", err)
+	}
+
+	selector := newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
+
+	log.Infof("DECENTRAL: manager new sector - schedule")
+	err = m.sched.Schedule(ctx, sector, sealtasks.TTAddPiece, selector, schedNop, func(ctx context.Context, w Worker) error {
+		return w.NewSector(ctx, sector)
+	})
+	log.Infof("DECENTRAL: manager new sector - scheduled")
 }
 
 func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPieces []abi.UnpaddedPieceSize, sz abi.UnpaddedPieceSize, r io.Reader) (abi.PieceInfo, error) {
@@ -378,15 +315,8 @@ func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 
 	var selector WorkerSelector
 	var err error
-	if len(existingPieces) == 0 { // new
-		/*
-				log.Infof("DECENTRAL: manager add piece - newAllocSelector")
-				selector = newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
-			} else { // use existing
-				log.Infof("DECENTRAL: manager add piece - newExistingSelector")
-				selector = newExistingSelector(m.index, sector, stores.FTUnsealed, false)
-		*/
-		selector = newAllocSelector(ctx, m.index, stores.FTUnsealed, stores.PathSealing)
+	if len(existingPieces) == 0 {
+		selector = newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
 	} else { // use existing
 		selector = newExistingSelector(m.index, sector, stores.FTUnsealed, false)
 	}
@@ -419,7 +349,7 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 
 	// TODO: also consider where the unsealed data sits
 
-	selector := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathSealing)
+	selector := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathSealing)
 
 	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
 		info, err := w.Info(ctx)
@@ -564,13 +494,6 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		}
 	}
 
-	/*
-		log.Infof("DECENTRAL: manager finalize sector - newExistingSelector")
-		selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
-
-		log.Infof("DECENTRAL: manager finalize sector - schedule finalize")
-		err := m.sched.Schedule(ctx, sector, sealtasks.TTFinalize, selector,
-	*/
 	selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
 
 	err := m.sched.Schedule(ctx, sector, sealtasks.TTFinalize, selector,
@@ -583,11 +506,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	}
 
 	log.Infof("DECENTRAL: manager finalize sector - finalize scheduled for sector %d", sector)
-	/*
-		log.Infof("DECENTRAL: manager finalize sector - new alloc selector")
-		fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
-	*/
-	fetchSel := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
+	fetchSel := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	moveUnsealed := unsealed
 	{
 		if len(keepUnsealed) == 0 {
@@ -623,16 +542,6 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 		return xerrors.Errorf("acquiring sector lock: %w", err)
 	}
 
-	/*
-	unsealed := stores.FTUnsealed
-	{
-		log.Infof("DECENTRAL: manager remove - storageFindSector")
-		_, err := m.index.StorageFindSector(ctx, sector, stores.FTUnsealed, 0, false)
-		if err != nil {
-			return xerrors.Errorf("finding unsealed sector: %w", err)
-		}
-	}
-	*/
 	var err error
 
 	if rerr := m.storage.Remove(ctx, sector, stores.FTSealed, true); rerr != nil {
@@ -644,16 +553,6 @@ func (m *Manager) Remove(ctx context.Context, sector abi.SectorID) error {
 	if rerr := m.storage.Remove(ctx, sector, stores.FTUnsealed, true); rerr != nil {
 		err = multierror.Append(err, xerrors.Errorf("removing sector (unsealed): %w", rerr))
 	}
-	/*
-	selector := newExistingSelector(m.index, sector, stores.FTCache|stores.FTSealed, false)
-
-	log.Infof("DECENTRAL: manager remove - schedule finalize")
-	return m.sched.Schedule(ctx, sector, sealtasks.TTFinalize, selector,
-		schedFetch(sector, stores.FTCache|stores.FTSealed|unsealed, stores.PathStorage, stores.AcquireMove),
-		func(ctx context.Context, w Worker) error {
-			return w.Remove(ctx, sector)
-		})
-	*/
 	return err
 }
 
@@ -732,43 +631,15 @@ func handleStoragePath(ctx context.Context, sector abi.SectorID, w Worker, secto
 }
 
 func readPathJson() (pathConfig, error) {
-	pathFile, err := homedir.Expand("~/pathConfig.json")
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
+	storageRepoPath, ok := os.LookupEnv("LOTUS_STORAGE_REPO_PATH")
+	if !ok {
+		return pathConfig{}, xerrors.New("LOTUS_STORAGE_REPO_PATH is not set env")
 	}
 
-	pathData, err := os.Open(pathFile)
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-	defer pathData.Close()
-
-	data := make([]byte, 2000)
-	n, err := pathData.Read(data)
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-
-	var path pathConfig
-	if err := json.Unmarshal(data[:n], &path); err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-
-	return path, nil
+	return pathConfig{StorageRepoPath: storageRepoPath}, nil
 }
-
-/*
-func (m *Manager) ReturnIndex() stores.SectorIndex {
-
-	return m.index
-}
-*/
 
 type pathConfig struct {
-	MinerId         string
+	//MinerId         string
 	StorageRepoPath string
 }

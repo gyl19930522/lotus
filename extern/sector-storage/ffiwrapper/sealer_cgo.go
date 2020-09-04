@@ -53,8 +53,28 @@ func New(sectors SectorProvider, cfg *Config) (*Sealer, error) {
 
 func (sb *Sealer) NewSector(ctx context.Context, sector abi.SectorID) error {
 	// TODO: Allocate the sector here instead of in addpiece
+	var err error
+	var done func()
+	var stagedFile *partialFile
 
-	return nil
+	defer func() {
+		if done != nil {
+			done()
+		}
+
+		if stagedFile != nil {
+			if err := stagedFile.Close(); err != nil {
+				log.Errorf("closing staged file: %+v", err)
+			}
+		}
+	}()
+
+	stagedFile, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
+	if err != nil {
+		return xerrors.Errorf("acquire unsealed sector: %w", err)
+	} else {
+		return nil
+	}
 }
 
 func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPieceSizes []abi.UnpaddedPieceSize, pieceSize abi.UnpaddedPieceSize, file storage.Data) (abi.PieceInfo, error) {
@@ -63,7 +83,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 		offset += size
 	}
 
-	log.Infof("DECENTRAL ffiwrapper add piece")
+	//log.Infof("DECENTRAL ffiwrapper add piece")
 	maxPieceSize := abi.PaddedPieceSize(sb.ssize)
 
 	if offset.Padded()+pieceSize.Padded() > maxPieceSize {
@@ -87,7 +107,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 	}()
 
 	var stagedPath stores.SectorPaths
-
+	/*
 	log.Infof("DECENTRAL ffiwrapper add piece - readPathJson")
 	path, err := readPathJson()
 	if err != nil && !os.IsNotExist(err) {
@@ -120,7 +140,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 			return abi.PieceInfo{}, nil
 		}
 	}
-
+	*/
 	if len(existingPieceSizes) == 0 {
 		stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
 		if err != nil {

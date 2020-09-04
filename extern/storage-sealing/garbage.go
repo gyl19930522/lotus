@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"fmt"
 )
 
 func (m *Sealing) pledgeSector(ctx context.Context, sectorID abi.SectorID, existingPieceSizes []abi.UnpaddedPieceSize, sizes ...abi.UnpaddedPieceSize) ([]abi.PieceInfo, error) {
@@ -23,11 +24,8 @@ func (m *Sealing) pledgeSector(ctx context.Context, sectorID abi.SectorID, exist
 		return nil, nil
 	}
 
-	log.Infof("Pledge %d, contains %+v", sectorID, existingPieceSizes)
-
 	out := make([]abi.PieceInfo, len(sizes))
 	for i, size := range sizes {
-		log.Infof("DECENTRAL: starting add piece")
 		//ppi, err := m.sealer.AddPiece(ctx, sectorID, existingPieceSizes, size, m.pledgeReader(size))
 		ppi, err := m.sealer.AddPiece(ctx, sectorID, existingPieceSizes, size, NewNullReader(size))
 		if err != nil {
@@ -39,7 +37,6 @@ func (m *Sealing) pledgeSector(ctx context.Context, sectorID abi.SectorID, exist
 		out[i] = ppi
 	}
 
-	log.Infof("DECENTRAL: leaving pledgeSector")
 	return out, nil
 }
 
@@ -67,6 +64,8 @@ func (m *Sealing) PledgeSector() error {
 			log.Errorf("%+v", err)
 			return
 		}
+
+		// DECENTRAL: I modified NewSector and implement AcquireSector in NewSector
 		err = m.sealer.NewSector(ctx, m.minerSector(sid))
 		if err != nil {
 			log.Errorf("%+v", err)
@@ -75,9 +74,7 @@ func (m *Sealing) PledgeSector() error {
 
 		//pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
 		log.Infof("DECENTRAL: calling readPiecesJson")
-
 		pieces, err := m.readPiecesJson(ctx, m.minerSector(sid), size)
-
 		if err != nil {
 			log.Errorf("%+v", err)
 			return
@@ -92,7 +89,6 @@ func (m *Sealing) PledgeSector() error {
 		}
 
 		log.Infof("DECENTRAL: calling newSectorCC")
-
 		if err := m.newSectorCC(sid, ps); err != nil {
 			log.Errorf("%+v", err)
 			return
@@ -161,7 +157,7 @@ func (m *Sealing) MutualSector(storageRepoPath string) error {
 		}
 
 		pathJson := pathConfig{
-			MinerId:         m.maddr.String(),
+			//MinerId:         m.Address().String(),
 			StorageRepoPath: p,
 		}
 
@@ -190,72 +186,7 @@ func (m *Sealing) readPiecesJson(ctx context.Context, sectorID abi.SectorID, siz
 		log.Errorf("%+v", err)
 		return nil, err
 	}
-
-	log.Infof("DECENTRAL: creating mutualSectorIdsFile")
-	mutualSectorIdsFile := filepath.Join(path.StorageRepoPath, "mutualSectorIds")
-	if _, err := os.Stat(mutualSectorIdsFile); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, xerrors.Errorf("os.Stat mutualSectorIdsFile %s : %w", mutualSectorIdsFile, err)
-		}
-
-		m.mutualSectorIdsMutex.Lock()
-		mutualSectorId := []byte(strconv.FormatInt(int64(sectorID.Number), 10))
-		err := ioutil.WriteFile(mutualSectorIdsFile, mutualSectorId, 0777)
-		m.mutualSectorIdsMutex.Unlock()
-		if err != nil {
-			return nil, xerrors.Errorf("save mutualSectorId to %s: %w", mutualSectorIdsFile, err)
-		}
-	} else {
-		log.Infof("DECENTRAL: reading mutualSectorIdsFile")
-		m.mutualSectorIdsMutex.Lock()
-		b, err := ioutil.ReadFile(mutualSectorIdsFile)
-		m.mutualSectorIdsMutex.Unlock()
-		if err != nil {
-			return nil, xerrors.Errorf("read mutualSectorIdsFile %s: %w", mutualSectorIdsFile, err)
-		}
-		mutualSectorIdString := []byte(string(b) + ";" + strconv.FormatInt(int64(sectorID.Number), 10))
-
-		log.Infof("DECENTRAL: appending mutualSectorIdsFile")
-		m.mutualSectorIdsMutex.Lock()
-		err = ioutil.WriteFile(mutualSectorIdsFile, mutualSectorIdString, 0777)
-		m.mutualSectorIdsMutex.Unlock()
-		if err != nil {
-			return nil, xerrors.Errorf("save mutualSectorId to %s: %w", mutualSectorIdsFile, err)
-		}
-	}
-
-	_, err = m.pledgeSector(ctx, sectorID, []abi.UnpaddedPieceSize{}, size)
-	if err != nil {
-		return nil, xerrors.Errorf("modified add piece error  : %w", err)
-	}
-
-	if path.MinerId != m.maddr.String() {
-		return nil, xerrors.Errorf("pathConfig.json has wrong miner Id")
-	}
-
-	log.Infof("DECENTRAL: reading pieceFile")
-	pieceFile, err := os.Open(filepath.Join(path.StorageRepoPath, "sectorInfo.json"))
-	if err != nil {
-		log.Errorf("%+v", err)
-		return nil, err
-	}
-
-	data := make([]byte, 2000)
-	n, err := pieceFile.Read(data)
-	if err != nil {
-		log.Errorf("%+v", err)
-		return nil, err
-	}
-
-	var piece abi.PieceInfo
-	if err := json.Unmarshal(data[:n], &piece); err != nil {
-		log.Errorf("%+v", err)
-		return nil, err
-	}
-
-	var pieces []abi.PieceInfo
-	pieces = append(pieces, piece)
-
+	
 	unsealPath := filepath.Join(path.StorageRepoPath, stores.FTUnsealed.String(), stores.SectorName(sectorID))
 
 	localPath, err := homedir.Expand("~/lotus_local_data")
@@ -272,42 +203,28 @@ func (m *Sealing) readPiecesJson(ctx context.Context, sectorID abi.SectorID, siz
 		return nil, err
 	}
 
-	log.Errorf("returning from readPieceJson")
-	return pieces, nil
+	pieceSize, ok := os.LookupEnv("LOTUS_MUTUAL_PIECE_SIZE")
+	if !ok {
+		return nil, xerrors.New("LOTUS_MUTUAL_PIECE_SIZE is not set env")
+	}
+	pieceCid, ok := os.LookupEnv("LOTUS_MUTUAL_PIECE_CID")
+	if !ok {
+		return nil, xerrors.New("LOTUS_MUTUAL_PIECE_CID is not set env")
+	}	
+	var piece abi.PieceInfo
+	if err := json.Unmarshal([]byte(fmt.Sprintf(`{"Size":%s,"PieceCID":{"/":"%s"}}`, pieceSize, pieceCid)), &piece); err != nil {
+		return nil, err
+	}
+
+	return []abi.PieceInfo{piece}, nil
 }
 
 func readPathJson() (pathConfig, error) {
-	pathFile, err := homedir.Expand("~/pathConfig.json")
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
+	storageRepoPath, ok := os.LookupEnv("LOTUS_STORAGE_REPO_PATH")
+	if !ok {
+		return pathConfig{}, xerrors.New("LOTUS_STORAGE_REPO_PATH is not set env")
 	}
-
-	pathData, err := os.Open(pathFile)
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-	defer func() {
-		if err := pathData.Close(); err != nil {
-			log.Warnf("pathConfig.json ile d failed: %w", err)
-		}
-	}()
-
-	data := make([]byte, 2000)
-	n, err := pathData.Read(data)
-	if err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-
-	var path pathConfig
-	if err := json.Unmarshal(data[:n], &path); err != nil {
-		log.Errorf("%+v", err)
-		return pathConfig{}, err
-	}
-
-	return path, nil
+	return pathConfig{StorageRepoPath: storageRepoPath}, nil
 }
 
 func saveJson(data []byte, path string) error {
@@ -330,6 +247,6 @@ func saveJson(data []byte, path string) error {
 }
 
 type pathConfig struct {
-	MinerId         string
+	//MinerId         string
 	StorageRepoPath string
 }

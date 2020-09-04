@@ -83,7 +83,7 @@ type Sealing struct {
 	toUpgrade map[abi.SectorNumber]struct{}
 
 	//getSealDelay GetSealingDelayFunc
-	mutualSectorIdsMutex sync.Mutex
+	//mutualSectorIdsMutex sync.Mutex
 	stats SectorStats
 
 	getConfig GetSealingConfigFunc
@@ -152,6 +152,7 @@ func (m *Sealing) Run(ctx context.Context) error {
 func (m *Sealing) Stop(ctx context.Context) error {
 	return m.sectors.Stop(ctx)
 }
+
 func (m *Sealing) AddPieceToAnySector(ctx context.Context, size abi.UnpaddedPieceSize, r io.Reader, d DealInfo) (abi.SectorNumber, abi.PaddedPieceSize, error) {
 	log.Infof("Adding piece for deal %d (publish msg: %s)", d.DealID, d.PublishCid)
 	if (padreader.PaddedSize(uint64(size))) != size {
@@ -345,12 +346,12 @@ func (m *Sealing) newDealSector() (abi.SectorNumber, error) {
 	if err != nil {
 		return 0, xerrors.Errorf("getting sector number: %w", err)
 	}
-
+	/*
 	err = m.sealer.NewSector(context.TODO(), m.minerSector(sid))
 	if err != nil {
 		return 0, xerrors.Errorf("initializing sector: %w", err)
 	}
-
+	*/
 	rt, err := ffiwrapper.SealProofTypeFromSectorSize(m.sealer.SectorSize())
 	if err != nil {
 		return 0, xerrors.Errorf("bad sector size: %w", err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	gopath "path"
-	"sort"
 	"sync"
 	"time"
 
@@ -405,14 +404,14 @@ func (i *Index) StorageBestAlloc(ctx context.Context, allocate SectorFileType, s
 	if len(candidates) == 0 {
 		return nil, xerrors.New("no good path found")
 	}
-
+	/*
 	sort.Slice(candidates, func(i, j int) bool {
 		iw := big.Mul(big.NewInt(candidates[i].fsi.Available), big.NewInt(int64(candidates[i].info.Weight)))
 		jw := big.Mul(big.NewInt(candidates[j].fsi.Available), big.NewInt(int64(candidates[j].info.Weight)))
 
 		return iw.GreaterThan(jw)
 	})
-
+	*/
 	out := make([]StorageInfo, len(candidates))
 	for i, candidate := range candidates {
 		out[i] = *candidate.info
