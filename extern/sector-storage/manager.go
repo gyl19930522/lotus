@@ -302,6 +302,7 @@ func (m *Manager) NewSector(ctx context.Context, sector abi.SectorID) error {
 		return w.NewSector(ctx, sector)
 	})
 	log.Infof("DECENTRAL: manager new sector - scheduled")
+	return err
 }
 
 func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPieces []abi.UnpaddedPieceSize, sz abi.UnpaddedPieceSize, r io.Reader) (abi.PieceInfo, error) {

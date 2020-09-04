@@ -1,9 +1,8 @@
 package sectorstorage
 
 import (
-	"container/heap"
 	"context"
-	"fmt"
+	//"fmt"
 	"io/ioutil"
 	"path/filepath"
 	"sort"
@@ -69,6 +68,7 @@ type scheduler struct {
 	schedQueue  		*requestQueue
 
 	closing  			chan struct{}
+	closed   			chan struct{}
 	testSync 			chan struct{} // used for testing
 
 	sectorGroupIds 		map[abi.SectorID]int
@@ -136,6 +136,7 @@ func newScheduler(spt abi.RegisteredSealProof) *scheduler {
 		info: 			make(chan func(interface{})),
 
 		closing: 		make(chan struct{}),
+		closed:  		make(chan struct{}),
 
 		sectorGroupIds: map[abi.SectorID]int{},
 		mutualPathMap:  map[int]string{},
@@ -195,7 +196,10 @@ type SchedDiagInfo struct {
 	Requests    []SchedDiagRequestInfo
 	OpenWindows []WorkerID
 }
+
 func (sh *scheduler) runSched() {
+	defer close(sh.closed)
+
 	go sh.runWorkerWatcher()
 
 	for {
@@ -205,7 +209,6 @@ func (sh *scheduler) runSched() {
 		case wid := <-sh.workerClosing:
 			sh.schedDropWorker(wid)
 		case req := <-sh.schedule:
-			doSched = true
 			if sh.testSync != nil {
 				sh.testSync <- struct{}{}
 			}
@@ -218,7 +221,7 @@ func (sh *scheduler) runSched() {
 				continue
 			}
 
-			heap.Push(sh.schedQueue, req)
+			sh.schedQueue.Push(req)
 		case ireq := <-sh.info:
 			ireq(sh.diag())
 		case wid := <-sh.workerFree:
@@ -284,7 +287,7 @@ func (sh *scheduler) onWorkerFreed(wid WorkerID) {
 		}
 
 		if scheduled {
-			heap.Remove(sh.schedQueue, i)
+			sh.schedQueue.Remove(i)
 			i--
 			continue
 		}
@@ -305,7 +308,7 @@ func (sh *scheduler) maybeSchedRequest(req *workerRequest) (bool, error) {
 			if id, err := sh.findSectorGroupId(req.sector); err != nil {
 				log.Errorf("sector %d did not have group: %+v", req.sector.Number, err)
 				return
-			} else if id != w.info.WorkerGroupsId {
+			} else if id != worker.info.WorkerGroupsId {
 				continue
 			}
 		}
@@ -483,6 +486,7 @@ func (sh *scheduler) schedClose() {
 
 func (sh *scheduler) Close() error {
 	close(sh.closing)
+
 	return nil
 }
 
