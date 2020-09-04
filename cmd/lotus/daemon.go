@@ -15,7 +15,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 
 	paramfetch "github.com/filecoin-project/go-paramfetch"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
@@ -31,6 +30,8 @@ import (
 	"github.com/filecoin-project/lotus/chain/store"
 	"github.com/filecoin-project/lotus/chain/vm"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/filecoin-project/lotus/extern/sector-storage/ffiwrapper"
+	"github.com/filecoin-project/lotus/lib/blockstore"
 	"github.com/filecoin-project/lotus/lib/peermgr"
 	"github.com/filecoin-project/lotus/lib/ulimit"
 	"github.com/filecoin-project/lotus/metrics"
@@ -39,7 +40,6 @@ import (
 	"github.com/filecoin-project/lotus/node/modules/dtypes"
 	"github.com/filecoin-project/lotus/node/modules/testing"
 	"github.com/filecoin-project/lotus/node/repo"
-	"github.com/filecoin-project/sector-storage/ffiwrapper"
 )
 
 const (
@@ -100,7 +100,11 @@ var DaemonCmd = &cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "import-chain",
-			Usage: "on first run, load chain from given file",
+			Usage: "on first run, load chain from given file and validate",
+		},
+		&cli.StringFlag{
+			Name:  "import-snapshot",
+			Usage: "import chain state from a given chain export file",
 		},
 		&cli.BoolFlag{
 			Name:  "halt-after-import",
@@ -191,13 +195,23 @@ var DaemonCmd = &cli.Command{
 		}
 
 		chainfile := cctx.String("import-chain")
-		if chainfile != "" {
+		snapshot := cctx.String("import-snapshot")
+		if chainfile != "" || snapshot != "" {
+			if chainfile != "" && snapshot != "" {
+				return fmt.Errorf("cannot specify both 'import-snapshot' and 'import-chain'")
+			}
+			var issnapshot bool
+			if chainfile == "" {
+				chainfile = snapshot
+				issnapshot = true
+			}
+
 			chainfile, err := homedir.Expand(chainfile)
 			if err != nil {
 				return err
 			}
 
-			if err := ImportChain(r, chainfile); err != nil {
+			if err := ImportChain(r, chainfile, issnapshot); err != nil {
 				return err
 			}
 			if cctx.Bool("halt-after-import") {
@@ -312,11 +326,12 @@ func importKey(ctx context.Context, api api.FullNode, f string) error {
 	return nil
 }
 
-func ImportChain(r repo.Repo, fname string) error {
+func ImportChain(r repo.Repo, fname string, snapshot bool) error {
 	fi, err := os.Open(fname)
 	if err != nil {
 		return err
 	}
+	defer fi.Close() //nolint:errcheck
 
 	lr, err := r.Lock(repo.FullNode)
 	if err != nil {
@@ -344,11 +359,23 @@ func ImportChain(r repo.Repo, fname string) error {
 		return xerrors.Errorf("importing chain failed: %w", err)
 	}
 
+	gb, err := cst.GetTipsetByHeight(context.TODO(), 0, ts, true)
+	if err != nil {
+		return err
+	}
+
+	err = cst.SetGenesis(gb.Blocks()[0])
+	if err != nil {
+		return err
+	}
+
 	stm := stmgr.NewStateManager(cst)
 
-	log.Infof("validating imported chain...")
-	if err := stm.ValidateChain(context.TODO(), ts); err != nil {
-		return xerrors.Errorf("chain validation failed: %w", err)
+	if !snapshot {
+		log.Infof("validating imported chain...")
+		if err := stm.ValidateChain(context.TODO(), ts); err != nil {
+			return xerrors.Errorf("chain validation failed: %w", err)
+		}
 	}
 
 	log.Info("accepting %s as new head", ts.Cids())
