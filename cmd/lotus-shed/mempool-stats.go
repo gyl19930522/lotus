@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"time"
@@ -28,14 +29,14 @@ var (
 )
 
 var (
-	LeTag, _ = tag.NewKey("quantile")
+	quantileTag, _ = tag.NewKey("quantile")
 )
 
 var (
 	AgeView = &view.View{
 		Name:        "mpool-age",
 		Measure:     MpoolAge,
-		TagKeys:     []tag.Key{LeTag},
+		TagKeys:     []tag.Key{quantileTag},
 		Aggregation: view.LastValue(),
 	}
 	SizeView = &view.View{
@@ -56,7 +57,7 @@ var (
 	MsgWait = &view.View{
 		Name:        "msg-wait",
 		Measure:     MsgWaitTime,
-		Aggregation: view.Distribution(10, 30, 60, 120, 240, 600, 1800, 3600),
+		Aggregation: view.Distribution(10, 20, 30, 45, 60, 90, 120, 240, 600, 1800, 3600),
 	}
 )
 
@@ -140,13 +141,22 @@ var mpoolStatsCmd = &cli.Command{
 				}
 
 				st := ageStats(ages)
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "40")}, MpoolAge.M(st.Perc40.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "50")}, MpoolAge.M(st.Perc50.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "60")}, MpoolAge.M(st.Perc60.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "70")}, MpoolAge.M(st.Perc70.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "80")}, MpoolAge.M(st.Perc80.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "90")}, MpoolAge.M(st.Perc90.Seconds()))
-				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(LeTag, "95")}, MpoolAge.M(st.Perc95.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "40")},
+					MpoolAge.M(st.Perc40.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "50")},
+					MpoolAge.M(st.Perc50.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "60")},
+					MpoolAge.M(st.Perc60.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "70")},
+					MpoolAge.M(st.Perc70.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "80")},
+					MpoolAge.M(st.Perc80.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "90")},
+					MpoolAge.M(st.Perc90.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "95")},
+					MpoolAge.M(st.Perc95.Seconds()))
+				stats.RecordWithTags(ctx, []tag.Mutator{tag.Upsert(quantileTag, "100")},
+					MpoolAge.M(st.Max.Seconds()))
 
 				stats.Record(ctx, MpoolSize.M(int64(len(tracker))))
 				fmt.Printf("%d messages in mempool for average of %s, (%s / %s / %s)\n", st.Count, st.Average, st.Perc50, st.Perc80, st.Perc95)
@@ -186,21 +196,17 @@ func ageStats(ages []time.Duration) *ageStat {
 	}
 	st.Average = sum / time.Duration(len(ages))
 
-	p40 := (4 * len(ages)) / 10
-	p50 := len(ages) / 2
-	p60 := (6 * len(ages)) / 10
-	p70 := (7 * len(ages)) / 10
-	p80 := (4 * len(ages)) / 5
-	p90 := (9 * len(ages)) / 10
-	p95 := (19 * len(ages)) / 20
+	p := func(q float64) int {
+		return int(math.Ceil(q / 100 * float64(len(ages))))
+	}
 
-	st.Perc40 = ages[p40]
-	st.Perc50 = ages[p50]
-	st.Perc60 = ages[p60]
-	st.Perc70 = ages[p70]
-	st.Perc80 = ages[p80]
-	st.Perc90 = ages[p90]
-	st.Perc95 = ages[p95]
+	st.Perc40 = ages[p(40)]
+	st.Perc50 = ages[p(50)]
+	st.Perc60 = ages[p(60)]
+	st.Perc70 = ages[p(70)]
+	st.Perc80 = ages[p(80)]
+	st.Perc90 = ages[p(90)]
+	st.Perc95 = ages[p(95)]
 
 	return &st
 }
