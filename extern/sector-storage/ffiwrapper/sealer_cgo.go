@@ -60,12 +60,6 @@ func (sb *Sealer) NewSector(ctx context.Context, sector abi.SectorID) error {
 		if done != nil {
 			done()
 		}
-
-		if stagedFile != nil {
-			if err := stagedFile.Close(); err != nil {
-				log.Errorf("closing staged file: %+v", err)
-			}
-		}
 	}()
 
 	stagedPath, done, err = sb.sectors.AcquireSector(ctx, sector, 0, stores.FTUnsealed, stores.PathSealing)
