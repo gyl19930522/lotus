@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	protocol "github.com/libp2p/go-libp2p-core/protocol"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/piecestore"
@@ -42,14 +44,18 @@ type CommonStruct struct {
 		AuthVerify func(ctx context.Context, token string) ([]auth.Permission, error) `perm:"read"`
 		AuthNew    func(ctx context.Context, perms []auth.Permission) ([]byte, error) `perm:"admin"`
 
-		NetConnectedness func(context.Context, peer.ID) (network.Connectedness, error) `perm:"read"`
-		NetPeers         func(context.Context) ([]peer.AddrInfo, error)                `perm:"read"`
-		NetConnect       func(context.Context, peer.AddrInfo) error                    `perm:"write"`
-		NetAddrsListen   func(context.Context) (peer.AddrInfo, error)                  `perm:"read"`
-		NetDisconnect    func(context.Context, peer.ID) error                          `perm:"write"`
-		NetFindPeer      func(context.Context, peer.ID) (peer.AddrInfo, error)         `perm:"read"`
-		NetPubsubScores  func(context.Context) ([]api.PubsubScore, error)              `perm:"read"`
-		NetAutoNatStatus func(context.Context) (api.NatInfo, error)                    `perm:"read"`
+		NetConnectedness            func(context.Context, peer.ID) (network.Connectedness, error)    `perm:"read"`
+		NetPeers                    func(context.Context) ([]peer.AddrInfo, error)                   `perm:"read"`
+		NetConnect                  func(context.Context, peer.AddrInfo) error                       `perm:"write"`
+		NetAddrsListen              func(context.Context) (peer.AddrInfo, error)                     `perm:"read"`
+		NetDisconnect               func(context.Context, peer.ID) error                             `perm:"write"`
+		NetFindPeer                 func(context.Context, peer.ID) (peer.AddrInfo, error)            `perm:"read"`
+		NetPubsubScores             func(context.Context) ([]api.PubsubScore, error)                 `perm:"read"`
+		NetAutoNatStatus            func(context.Context) (api.NatInfo, error)                       `perm:"read"`
+		NetBandwidthStats           func(ctx context.Context) (metrics.Stats, error)                 `perm:"read"`
+		NetBandwidthStatsByPeer     func(ctx context.Context) (map[string]metrics.Stats, error)      `perm:"read"`
+		NetBandwidthStatsByProtocol func(ctx context.Context) (map[protocol.ID]metrics.Stats, error) `perm:"read"`
+		NetAgentVersion             func(ctx context.Context, p peer.ID) (string, error)             `perm:"read"`
 
 		ID      func(context.Context) (peer.ID, error)     `perm:"read"`
 		Version func(context.Context) (api.Version, error) `perm:"read"`
@@ -86,7 +92,7 @@ type FullNodeStruct struct {
 		ChainGetNode                  func(ctx context.Context, p string) (*api.IpldObject, error)                                                       `perm:"read"`
 		ChainGetMessage               func(context.Context, cid.Cid) (*types.Message, error)                                                             `perm:"read"`
 		ChainGetPath                  func(context.Context, types.TipSetKey, types.TipSetKey) ([]*api.HeadChange, error)                                 `perm:"read"`
-		ChainExport                   func(context.Context, types.TipSetKey) (<-chan []byte, error)                                                      `perm:"read"`
+		ChainExport                   func(context.Context, abi.ChainEpoch, types.TipSetKey) (<-chan []byte, error)                                      `perm:"read"`
 
 		BeaconGetEntry func(ctx context.Context, epoch abi.ChainEpoch) (*types.BeaconEntry, error) `perm:"read"`
 
@@ -203,6 +209,7 @@ type FullNodeStruct struct {
 
 		PaychGet                   func(ctx context.Context, from, to address.Address, amt types.BigInt) (*api.ChannelInfo, error)           `perm:"sign"`
 		PaychGetWaitReady          func(context.Context, cid.Cid) (address.Address, error)                                                   `perm:"sign"`
+		PaychAvailableFunds        func(address.Address, address.Address) (*api.ChannelAvailableFunds, error)                                `perm:"sign"`
 		PaychList                  func(context.Context) ([]address.Address, error)                                                          `perm:"read"`
 		PaychStatus                func(context.Context, address.Address) (*api.PaychStatus, error)                                          `perm:"read"`
 		PaychSettle                func(context.Context, address.Address) (cid.Cid, error)                                                   `perm:"sign"`
@@ -213,7 +220,7 @@ type FullNodeStruct struct {
 		PaychVoucherCheckValid     func(context.Context, address.Address, *paych.SignedVoucher) error                                        `perm:"read"`
 		PaychVoucherCheckSpendable func(context.Context, address.Address, *paych.SignedVoucher, []byte, []byte) (bool, error)                `perm:"read"`
 		PaychVoucherAdd            func(context.Context, address.Address, *paych.SignedVoucher, []byte, types.BigInt) (types.BigInt, error)  `perm:"write"`
-		PaychVoucherCreate         func(context.Context, address.Address, big.Int, uint64) (*paych.SignedVoucher, error)                     `perm:"sign"`
+		PaychVoucherCreate         func(context.Context, address.Address, big.Int, uint64) (*api.VoucherCreateResult, error)                 `perm:"sign"`
 		PaychVoucherList           func(context.Context, address.Address) ([]*paych.SignedVoucher, error)                                    `perm:"write"`
 		PaychVoucherSubmit         func(context.Context, address.Address, *paych.SignedVoucher, []byte, []byte) (cid.Cid, error)             `perm:"sign"`
 	}
@@ -235,7 +242,7 @@ type StorageMinerStruct struct {
 		MarketImportDealData      func(context.Context, cid.Cid, string) error                                                                                                                                 `perm:"write"`
 		MarketListDeals           func(ctx context.Context) ([]storagemarket.StorageDeal, error)                                                                                                               `perm:"read"`
 		MarketListRetrievalDeals  func(ctx context.Context) ([]retrievalmarket.ProviderDealState, error)                                                                                                       `perm:"read"`
-		MarketGetDealUpdates      func(ctx context.Context, d cid.Cid) (<-chan storagemarket.MinerDeal, error)                                                                                                 `perm:"read"`
+		MarketGetDealUpdates      func(ctx context.Context) (<-chan storagemarket.MinerDeal, error)                                                                                                            `perm:"read"`
 		MarketListIncompleteDeals func(ctx context.Context) ([]storagemarket.MinerDeal, error)                                                                                                                 `perm:"read"`
 		MarketSetAsk              func(ctx context.Context, price types.BigInt, verifiedPrice types.BigInt, duration abi.ChainEpoch, minPieceSize abi.PaddedPieceSize, maxPieceSize abi.PaddedPieceSize) error `perm:"admin"`
 		MarketGetAsk              func(ctx context.Context) (*storagemarket.SignedStorageAsk, error)                                                                                                           `perm:"read"`
@@ -319,7 +326,8 @@ type WorkerStruct struct {
 		FinalizeSector  func(context.Context, abi.SectorID, []storage.Range) error                                                                                                                                 `perm:"admin"`
 		ReleaseUnsealed func(ctx context.Context, sector abi.SectorID, safeToFree []storage.Range) error                                                                                                           `perm:"admin"`
 		Remove          func(ctx context.Context, sector abi.SectorID) error                                                                                                                                       `perm:"admin"`
-		MoveStorage     func(ctx context.Context, sector abi.SectorID) error                                                                                                                                       `perm:"admin"`
+		MoveStorage     func(ctx context.Context, sector abi.SectorID, types stores.SectorFileType) error                                                                                                          `perm:"admin"`
+		StorageAddLocal func(ctx context.Context, path string) error                                                                                                                                               `perm:"admin"`
 
 		UnsealPiece func(context.Context, abi.SectorID, storiface.UnpaddedByteIndex, abi.UnpaddedPieceSize, abi.SealRandomness, cid.Cid) error `perm:"admin"`
 		ReadPiece   func(context.Context, io.Writer, abi.SectorID, storiface.UnpaddedByteIndex, abi.UnpaddedPieceSize) (bool, error)           `perm:"admin"`
@@ -370,6 +378,22 @@ func (c *CommonStruct) NetFindPeer(ctx context.Context, p peer.ID) (peer.AddrInf
 
 func (c *CommonStruct) NetAutoNatStatus(ctx context.Context) (api.NatInfo, error) {
 	return c.Internal.NetAutoNatStatus(ctx)
+}
+
+func (c *CommonStruct) NetBandwidthStats(ctx context.Context) (metrics.Stats, error) {
+	return c.Internal.NetBandwidthStats(ctx)
+}
+
+func (c *CommonStruct) NetBandwidthStatsByPeer(ctx context.Context) (map[string]metrics.Stats, error) {
+	return c.Internal.NetBandwidthStatsByPeer(ctx)
+}
+
+func (c *CommonStruct) NetBandwidthStatsByProtocol(ctx context.Context) (map[protocol.ID]metrics.Stats, error) {
+	return c.Internal.NetBandwidthStatsByProtocol(ctx)
+}
+
+func (c *CommonStruct) NetAgentVersion(ctx context.Context, p peer.ID) (string, error) {
+	return c.Internal.NetAgentVersion(ctx, p)
 }
 
 // ID implements API.ID
@@ -655,8 +679,8 @@ func (c *FullNodeStruct) ChainGetPath(ctx context.Context, from types.TipSetKey,
 	return c.Internal.ChainGetPath(ctx, from, to)
 }
 
-func (c *FullNodeStruct) ChainExport(ctx context.Context, tsk types.TipSetKey) (<-chan []byte, error) {
-	return c.Internal.ChainExport(ctx, tsk)
+func (c *FullNodeStruct) ChainExport(ctx context.Context, nroots abi.ChainEpoch, tsk types.TipSetKey) (<-chan []byte, error) {
+	return c.Internal.ChainExport(ctx, nroots, tsk)
 }
 
 func (c *FullNodeStruct) BeaconGetEntry(ctx context.Context, epoch abi.ChainEpoch) (*types.BeaconEntry, error) {
@@ -883,6 +907,10 @@ func (c *FullNodeStruct) PaychGetWaitReady(ctx context.Context, sentinel cid.Cid
 	return c.Internal.PaychGetWaitReady(ctx, sentinel)
 }
 
+func (c *FullNodeStruct) PaychAvailableFunds(from address.Address, to address.Address) (*api.ChannelAvailableFunds, error) {
+	return c.Internal.PaychAvailableFunds(from, to)
+}
+
 func (c *FullNodeStruct) PaychList(ctx context.Context) ([]address.Address, error) {
 	return c.Internal.PaychList(ctx)
 }
@@ -903,7 +931,7 @@ func (c *FullNodeStruct) PaychVoucherAdd(ctx context.Context, addr address.Addre
 	return c.Internal.PaychVoucherAdd(ctx, addr, sv, proof, minDelta)
 }
 
-func (c *FullNodeStruct) PaychVoucherCreate(ctx context.Context, pch address.Address, amt types.BigInt, lane uint64) (*paych.SignedVoucher, error) {
+func (c *FullNodeStruct) PaychVoucherCreate(ctx context.Context, pch address.Address, amt types.BigInt, lane uint64) (*api.VoucherCreateResult, error) {
 	return c.Internal.PaychVoucherCreate(ctx, pch, amt, lane)
 }
 
@@ -1079,8 +1107,8 @@ func (c *StorageMinerStruct) MarketListRetrievalDeals(ctx context.Context) ([]re
 	return c.Internal.MarketListRetrievalDeals(ctx)
 }
 
-func (c *StorageMinerStruct) MarketGetDealUpdates(ctx context.Context, d cid.Cid) (<-chan storagemarket.MinerDeal, error) {
-	return c.Internal.MarketGetDealUpdates(ctx, d)
+func (c *StorageMinerStruct) MarketGetDealUpdates(ctx context.Context) (<-chan storagemarket.MinerDeal, error) {
+	return c.Internal.MarketGetDealUpdates(ctx)
 }
 
 func (c *StorageMinerStruct) MarketListIncompleteDeals(ctx context.Context) ([]storagemarket.MinerDeal, error) {
@@ -1229,8 +1257,12 @@ func (w *WorkerStruct) Remove(ctx context.Context, sector abi.SectorID) error {
 	return w.Internal.Remove(ctx, sector)
 }
 
-func (w *WorkerStruct) MoveStorage(ctx context.Context, sector abi.SectorID) error {
-	return w.Internal.MoveStorage(ctx, sector)
+func (w *WorkerStruct) MoveStorage(ctx context.Context, sector abi.SectorID, types stores.SectorFileType) error {
+	return w.Internal.MoveStorage(ctx, sector, types)
+}
+
+func (w *WorkerStruct) StorageAddLocal(ctx context.Context, path string) error {
+	return w.Internal.StorageAddLocal(ctx, path)
 }
 
 func (w *WorkerStruct) UnsealPiece(ctx context.Context, id abi.SectorID, index storiface.UnpaddedByteIndex, size abi.UnpaddedPieceSize, randomness abi.SealRandomness, c cid.Cid) error {
