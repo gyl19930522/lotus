@@ -298,7 +298,7 @@ func (m *Manager) NewSector(ctx context.Context, sector abi.SectorID) error {
 	selector := newAllocSelector(m.index, stores.FTUnsealed, stores.PathSealing)
 
 	log.Infof("DECENTRAL: manager new sector - schedule")
-	err = m.sched.Schedule(ctx, sector, sealtasks.TTAddPiece, selector, schedNop, func(ctx context.Context, w Worker) error {
+	err := m.sched.Schedule(ctx, sector, sealtasks.TTAddPiece, selector, schedNop, func(ctx context.Context, w Worker) error {
 		return w.NewSector(ctx, sector)
 	})
 	log.Infof("DECENTRAL: manager new sector - scheduled")

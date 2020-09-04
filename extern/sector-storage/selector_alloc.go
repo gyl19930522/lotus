@@ -53,7 +53,6 @@ func (s *allocSelector) Ok(ctx context.Context, task sealtasks.TaskType, spt abi
 			return true, nil
 		}
 	}
-	//log.Infof("in selector alloc, can't find best")
 
 	return false, nil
 }

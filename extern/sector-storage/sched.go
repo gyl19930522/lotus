@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/filecoin-project/sector-storage/stores"
-
+	"github.com/hashicorp/go-multierror"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/specs-actors/actors/abi"
@@ -313,7 +313,7 @@ func (sh *scheduler) maybeSchedRequest(req *workerRequest) (bool, error) {
 			}
 		}
 
-		rpcCtx, cancel := context.WithTimeout(req.ctx, selectorTimeout)
+		rpcCtx, cancel := context.WithTimeout(req.ctx, SelectorTimeout)
 		ok, err := req.sel.Ok(rpcCtx, req.taskType, sh.spt, worker)
 		cancel()
 
@@ -338,7 +338,7 @@ func (sh *scheduler) maybeSchedRequest(req *workerRequest) (bool, error) {
 			var serr error
 
 			sort.SliceStable(acceptable, func(i, j int) bool {
-				rpcCtx, cancel := context.WithTimeout(req.ctx, selectorTimeout)
+				rpcCtx, cancel := context.WithTimeout(req.ctx, SelectorTimeout)
 				defer cancel()
 				r, err := req.sel.Cmp(rpcCtx, req.taskType, sh.workers[acceptable[i]], sh.workers[acceptable[j]])
 
@@ -484,9 +484,13 @@ func (sh *scheduler) schedClose() {
 	}
 }
 
-func (sh *scheduler) Close() error {
+func (sh *scheduler) Close(ctx context.Context) error {
 	close(sh.closing)
-
+	select {
+	case <-sh.closed:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return nil
 }
 
