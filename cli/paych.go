@@ -34,6 +34,14 @@ var paychAddFundsCmd = &cli.Command{
 	Name:      "add-funds",
 	Usage:     "Add funds to the payment channel between fromAddress and toAddress. Creates the payment channel if it doesn't already exist.",
 	ArgsUsage: "[fromAddress toAddress amount]",
+	Flags: []cli.Flag{
+
+		&cli.BoolFlag{
+			Name:  "restart-retrievals",
+			Usage: "restart stalled retrieval deals on this payment channel",
+			Value: true,
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		if cctx.Args().Len() != 3 {
 			return ShowHelp(cctx, fmt.Errorf("must pass three arguments: <from> <to> <available funds>"))
@@ -76,6 +84,10 @@ var paychAddFundsCmd = &cli.Command{
 		}
 
 		fmt.Fprintln(cctx.App.Writer, chAddr)
+		restartRetrievals := cctx.Bool("restart-retrievals")
+		if restartRetrievals {
+			return api.ClientRetrieveTryRestartInsufficientFunds(ctx, chAddr)
+		}
 		return nil
 	},
 }
