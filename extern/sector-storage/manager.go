@@ -2,7 +2,7 @@ package sectorstorage
 
 import (
 	"context"
-	"encoding/json"
+	//"encoding/json"
 	"errors"
 	"io"
 	"io/ioutil"

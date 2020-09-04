@@ -191,7 +191,7 @@ type SchedDiagRequestInfo struct {
 	GroupID  			int
 }
 
-type SchedDiagInfo []SchedDiagRequestInfotype SchedDiagInfo struct {
+type SchedDiagInfo struct {
 	Requests    []SchedDiagRequestInfo
 	OpenWindows []WorkerID
 }
