@@ -18,6 +18,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/connmgr"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/raulk/clock"
 	cbg "github.com/whyrusleeping/cbor-gen"
 	"github.com/whyrusleeping/pubsub"
 	"go.opencensus.io/stats"
@@ -125,6 +126,10 @@ type Syncer struct {
 	verifier ffiwrapper.Verifier
 
 	windowSize int
+
+	ticker          *clock.Ticker
+	tickerCtx       context.Context
+	tickerCtxCancel context.CancelFunc
 }
 
 // NewSyncer creates a new Syncer object.
@@ -166,11 +171,31 @@ func NewSyncer(sm *stmgr.StateManager, bsync *blocksync.BlockSync, connmgr connm
 }
 
 func (syncer *Syncer) Start() {
+	syncer.ticker = build.Clock.Ticker(time.Duration(build.BlockDelaySecs) * time.Second)
+	syncer.tickerCtx, syncer.tickerCtxCancel = context.WithCancel(context.Background())
 	syncer.syncmgr.Start()
+
+	genesisTime := time.Unix(int64(syncer.Genesis.MinTimestamp()), 0)
+
+	go func() {
+		for {
+			select {
+			case <-syncer.ticker.C:
+				sinceGenesis := build.Clock.Now().Sub(genesisTime)
+				expectedHeight := int64(sinceGenesis.Seconds()) / int64(build.BlockDelaySecs)
+
+				stats.Record(syncer.tickerCtx, metrics.ChainNodeHeightExpected.M(int64(expectedHeight)))
+			case <-syncer.tickerCtx.Done():
+				return
+			}
+		}
+	}()
 }
 
 func (syncer *Syncer) Stop() {
 	syncer.syncmgr.Stop()
+	syncer.ticker.Stop()
+	syncer.tickerCtxCancel()
 }
 
 // InformNewHead informs the syncer about a new potential tipset
