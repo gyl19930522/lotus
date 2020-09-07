@@ -769,7 +769,7 @@ func IsMutualSector(sectorId int64, mutualSectorIdsFile string) (bool, error) {
 
 	return false, nil
 }
-
+/*
 func readPathJson() (pathConfig, error) {
 	pathFile, err := homedir.Expand("~/pathConfig.json")
 	if err != nil {
@@ -808,3 +808,4 @@ type pathConfig struct {
 	MinerId         string
 	StorageRepoPath string
 }
+*/
